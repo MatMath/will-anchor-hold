@@ -7,7 +7,10 @@ import {
   ROPES,
   estimateWindageItems,
   knotsToMs,
+  anchorDistanceForPretension,
   lineLengthForPretension,
+  liftOffWind,
+  maxAnchorDistance,
   runScenario,
   solveEquilibrium,
   sweep,
@@ -66,7 +69,7 @@ app.innerHTML = `
       <div class="play-grid">
         <div class="dial" id="dial" tabindex="0" role="slider" aria-label="Wind direction relative to the bow" aria-valuemin="0" aria-valuemax="359"></div>
         <div class="play-fields">
-          ${num('windKn', 'Wind speed', 'kn', { min: 0, max: 80, step: 1, slider: [0, 60] })}
+          ${num('windKn', 'Wind speed', 'kn', { min: 0, max: 80, step: 1, slider: [0, 60], id: 'play-wind', hint: '<span id="lift-hint"></span>' })}
           ${num('windDir', 'Wind from (relative to bow)', '°', { min: 0, max: 359, step: 5, slider: [0, 355] })}
           <div class="row-btns">
             ${segmented('viewCase', 'Case shown in the diagrams', [['rest', 'At rest'], ['sustained', 'Sustained'], ['gust', 'Gust']])}
@@ -75,8 +78,8 @@ app.innerHTML = `
         </div>
       </div>
       <div class="play-sliders">
-        ${num('chainLength', 'Chain out', 'm', { min: 5, max: 150, step: 1, slider: [10, 100] })}
-        ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 0.5, slider: [20, 120] })}
+        ${num('chainLength', 'Chain out', 'm', { min: 5, max: 150, step: 1, slider: [10, 100], id: 'play-chain', hint: '<span id="chain-hint"></span>' })}
+        ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 0.1, slider: [20, 120], id: 'play-anchor', hint: '<span id="snap-hint"></span>' })}
         ${num('lineLength', 'Stern line length', 'm', { min: 0.5, max: 60, step: 0.05, slider: [1, 20] })}
         ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1, slider: [1, 25] })}
       </div>
@@ -252,6 +255,10 @@ let state: AppState = loadState();
 let result: ScenarioResult | null = null;
 let error: string | null = null;
 let points: SweepPoint[] = [];
+/** Mean wind (kn) at which the whole chain lifts off the seabed; null = never (up to 100 kn). */
+let liftKn: number | null = null;
+/** Anchor → quay distance giving the target pretension at rest (slider snap point). */
+let snapD: number | null = null;
 let animWind: number | null = null;
 let animEq: Equilibrium | null = null;
 let planFrozen: ViewBox | undefined;
@@ -309,6 +316,8 @@ function schedule(): void {
   sweepTimer = window.setTimeout(() => {
     computeSweep();
     renderSweepChart();
+    computeDerived();
+    paintSliders();
   }, 120);
 }
 
@@ -319,6 +328,27 @@ function compute(): void {
   } catch (e) {
     result = null;
     error = e instanceof Error ? e.message : String(e);
+  }
+}
+
+/** Slower derived values (bisections), refreshed after input settles. */
+function computeDerived(): void {
+  if (!result) {
+    liftKn = null;
+    snapD = null;
+    return;
+  }
+  const inp = toScenario(state);
+  try {
+    liftKn = liftOffWind(inp);
+  } catch {
+    liftKn = null;
+  }
+  try {
+    const d = anchorDistanceForPretension(inp, state.pretensionTarget * 1000);
+    snapD = d === null ? null : round(d, 1);
+  } catch {
+    snapD = null;
   }
 }
 
@@ -342,6 +372,7 @@ function shownEq(r: ScenarioResult): { eq: Equilibrium; label: string } {
 
 function render(): void {
   syncControls(document, state);
+  paintSliders();
   renderDial($('#dial'), state.windDir, state.windKn);
   renderWindageItems();
   const u = state.units as Units;
@@ -446,6 +477,89 @@ function renderWindageItems(): void {
     .join('')}</tbody>`;
 }
 
+// ───────────────────────────── Slider colours, snap, range ─────────────────────────────
+
+/** Anchor → quay limits: from the anchor under the bow out to line + boat + chain pulled straight. */
+function anchorRange(): [number, number] {
+  const max = maxAnchorDistance(toScenario(state));
+  return [Math.floor(max - state.chainLength), Math.floor(max * 10) / 10];
+}
+const snapTolerance = (): number => {
+  const [lo, hi] = anchorRange();
+  return Math.max(0.3, (hi - lo) * 0.025);
+};
+
+/** Position on a range track (CSS length) for a value, allowing for the 18 px thumb. */
+const trackPos = (v: number, lo: number, hi: number): string =>
+  `calc(9px + (100% - 18px) * ${Math.min(1, Math.max(0, (v - lo) / (hi - lo))).toFixed(4)})`;
+
+function paintSliders(): void {
+  const wind = document.querySelector<HTMLInputElement>('#play-wind')?.parentElement?.querySelector<HTMLInputElement>('input[type=range]');
+  const chain = document.querySelector<HTMLInputElement>('#play-chain')?.parentElement?.querySelector<HTMLInputElement>('input[type=range]');
+  const anchor = document.querySelector<HTMLInputElement>('#play-anchor')?.parentElement?.querySelector<HTMLInputElement>('input[type=range]');
+
+  // Wind: green → amber (chain fully lifted in gusts) → red (fully lifted at the mean wind).
+  if (wind) {
+    const lo = Number(wind.min);
+    const hi = Number(wind.max);
+    const liftHint = $('#lift-hint');
+    if (liftKn === null) {
+      wind.style.setProperty('--track', 'var(--good)');
+      wind.style.removeProperty('--thumb');
+      liftHint.textContent = 'Chain stays on the seabed up to 100 kn.';
+    } else {
+      const gustLift = liftKn / state.gustFactor;
+      const a = trackPos(gustLift, lo, hi);
+      const b = trackPos(liftKn, lo, hi);
+      wind.style.setProperty('--track', `linear-gradient(to right, var(--good) 0 ${a}, var(--warning) ${a} ${b}, var(--critical) ${b} 100%)`);
+      const zone = state.windKn >= liftKn ? 'var(--critical)' : state.windKn >= gustLift ? 'var(--warning)' : 'var(--good)';
+      wind.style.setProperty('--thumb', zone);
+      liftHint.innerHTML =
+        liftKn === 0
+          ? '<strong>Chain is fully lifted even at rest.</strong>'
+          : `Chain fully lifted from <strong>${liftKn.toFixed(1)} kn</strong> (in gusts from ${gustLift.toFixed(1)} kn).`;
+    }
+  }
+
+  // Chain out: turns amber / red while the chain is fully lifted in the gust / at the mean wind.
+  if (chain && result) {
+    const sus = result.sustained.eq.rode.grounded <= 1e-9 && !result.sustained.eq.rode.slack;
+    const gst = result.gust.eq.rode.grounded <= 1e-9 && !result.gust.eq.rode.slack;
+    const color = sus ? 'var(--critical)' : gst ? 'var(--warning)' : '';
+    chain.classList.toggle('is-lifted', Boolean(color));
+    if (color) {
+      chain.style.setProperty('--track', color);
+      chain.style.setProperty('--thumb', color);
+    } else {
+      chain.style.removeProperty('--track');
+      chain.style.removeProperty('--thumb');
+    }
+    $('#chain-hint').innerHTML = sus
+      ? '<span class="hint-red">✕ Fully lifted at the mean wind: anchor pulled upward.</span>'
+      : gst
+        ? '<span class="hint-amber">! Fully lifted in gusts.</span>'
+        : 'Part of the chain stays on the seabed.';
+  }
+
+  // Anchor → quay: range follows the rigging limits; a marker shows the balanced distance it snaps to.
+  const [lo, hi] = anchorRange();
+  document.querySelectorAll<HTMLInputElement>('[data-key=anchorDistance]').forEach((el) => {
+    el.max = String(hi);
+    if (el.type === 'range') el.min = String(lo);
+  });
+  if (anchor) {
+    if (snapD !== null) {
+      const p = trackPos(snapD, lo, hi);
+      anchor.style.setProperty('--track', `linear-gradient(to right, var(--track-bg) 0 calc(${p} - 1.5px), var(--ink) calc(${p} - 1.5px) calc(${p} + 1.5px), var(--track-bg) calc(${p} + 1.5px) 100%)`);
+      anchor.style.setProperty('--thumb', Math.abs(state.anchorDistance - snapD) < 0.05 ? 'var(--ink)' : 'var(--accent)');
+      $('#snap-hint').innerHTML = `Snaps to <strong>${snapD.toFixed(1)} m</strong> = ${state.pretensionTarget} kN pretension at rest. Max ${hi.toFixed(1)} m (all pulled straight).`;
+    } else {
+      anchor.style.removeProperty('--track');
+      $('#snap-hint').textContent = `Target pretension not reachable. Max ${hi.toFixed(1)} m.`;
+    }
+  }
+}
+
 // ───────────────────────────── Events ─────────────────────────────
 
 document.addEventListener('input', (ev) => {
@@ -465,8 +579,10 @@ document.addEventListener('input', (ev) => {
   }
   const key = el.dataset.key as Key | undefined;
   if (!key) return;
-  const v = readControl(el);
+  let v = readControl(el);
   if (v === undefined) return;
+  // The anchor slider snaps to the balanced (target-pretension) distance when close to it.
+  if (key === 'anchorDistance' && el.type === 'range' && snapD !== null && Math.abs((v as number) - snapD) <= snapTolerance()) v = snapD;
   const patch: Partial<AppState> = { [key]: v } as Partial<AppState>;
   const autoKey = AUTO_OF[key];
   if (autoKey) (patch as Record<string, unknown>)[autoKey] = false;
@@ -568,8 +684,8 @@ plan.addEventListener('pointerdown', (ev) => {
 plan.addEventListener('pointermove', (ev) => {
   if (dragging !== 'anchor') return;
   const [x, y] = toUser(plan, ev);
-  const minD = state.loa + 2;
-  update({ anchorDistance: Math.max(minD, round(x * 2, 0) / 2), anchorOffset: round(-y * 2, 0) / 2 });
+  const [minD, maxD] = anchorRange();
+  update({ anchorDistance: Math.min(maxD, Math.max(minD, round(x * 2, 0) / 2)), anchorOffset: round(-y * 2, 0) / 2 });
 });
 const endDrag = (): void => {
   if (!dragging) return;
@@ -662,3 +778,5 @@ compute();
 render();
 computeSweep();
 renderSweepChart();
+computeDerived();
+paintSliders();

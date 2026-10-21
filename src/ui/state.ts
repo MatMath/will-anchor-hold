@@ -195,6 +195,9 @@ export function resolve(s: AppState): AppState {
   if (out.snubberMblAuto) out.snubberMbl = round(ropeMbl(out.snubberType, out.snubberD) / 1000, 1);
   if (out.lineMblAuto) out.lineMbl = round(ropeMbl(out.lineType, out.lineD) / 1000, 1);
   if (out.holdingAuto) out.holdingRatio = HOLDING_RATIO[out.anchorType][out.bottom];
+  // The anchor can be no further out than stern line + boat + chain pulled straight.
+  const maxD = out.lineLength + out.loa + out.rollerOverhang + out.chainLength;
+  if (out.anchorDistance > maxD) out.anchorDistance = round(Math.floor(maxD * 10) / 10, 1);
   return out;
 }
 

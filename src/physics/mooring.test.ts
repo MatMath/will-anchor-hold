@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   KNOT,
   WORKED_EXAMPLE,
+  anchorDistanceForPretension,
   buildModel,
+  liftOffWind,
+  maxAnchorDistance,
   lineLengthForPretension,
   runScenario,
   solveEquilibrium,
@@ -133,5 +136,42 @@ describe('scenario + sweep', () => {
     expect(s.chain.tension / 1000).toBeCloseTo(7.5, 0);
     expect(s.drift.dy).toBeCloseTo(3.4, 0);
     expect(s.anchor.pull).toBe('upward');
+  });
+});
+
+describe('slider helpers', () => {
+  it('max anchor distance = stern line + boat + roller + chain', () => {
+    expect(maxAnchorDistance(WORKED_EXAMPLE)).toBeCloseTo(6.454 + 12.8 + 0.3 + 40, 9);
+  });
+
+  it('balanced anchor distance reproduces the target pretension (worked example ≈ 58 m for 1 kN)', () => {
+    const d = anchorDistanceForPretension(WORKED_EXAMPLE, 1000)!;
+    expect(d).toBeCloseTo(58, 1);
+    const r = solveRest(buildModel({ ...WORKED_EXAMPLE, anchor: { ...WORKED_EXAMPLE.anchor, distance: d } }));
+    expect(r.rode.h).toBeCloseTo(1000, 0);
+    expect(d).toBeLessThan(maxAnchorDistance(WORKED_EXAMPLE));
+  });
+
+  it('balanced distance grows with the target pretension', () => {
+    const a = anchorDistanceForPretension(WORKED_EXAMPLE, 300)!;
+    const b = anchorDistanceForPretension(WORKED_EXAMPLE, 3000)!;
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it('lift-off wind: chain on the seabed just below, fully lifted just above', () => {
+    const v = liftOffWind(WORKED_EXAMPLE)!;
+    expect(v).toBeGreaterThan(5);
+    expect(v).toBeLessThan(30); // fully lifted at 30 kn in the worked example
+    const m = buildModel(WORKED_EXAMPLE);
+    const rest = solveRest(m);
+    const below = solveEquilibrium(m, (v - 0.3) * KNOT, 90, { initial: rest.pose });
+    const above = solveEquilibrium(m, (v + 0.3) * KNOT, 90, { initial: rest.pose });
+    expect(below.rode.grounded).toBeGreaterThan(0);
+    expect(above.rode.grounded).toBe(0);
+  });
+
+  it('lift-off wind is null when a long chain never lifts', () => {
+    const long: ScenarioInput = { ...WORKED_EXAMPLE, chain: { ...WORKED_EXAMPLE.chain, length: 120 }, anchor: { ...WORKED_EXAMPLE.anchor, distance: 130 } };
+    expect(liftOffWind(long, 20)).toBeNull();
   });
 });

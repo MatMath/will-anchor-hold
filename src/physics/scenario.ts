@@ -301,3 +301,52 @@ export function lineLengthForPretension(inp: ScenarioInput, targetH: number): nu
     return guess;
   }
 }
+
+/**
+ * Longest sensible anchor → quay distance: stern line + boat (with roller) + chain all pulled straight.
+ * Beyond this the mooring cannot be rigged at all.
+ */
+export const maxAnchorDistance = (inp: ScenarioInput): number =>
+  inp.lines.length + inp.loa + inp.rollerOverhang + inp.chain.length;
+
+/**
+ * Anchor → quay distance at which the chain pretension at rest equals `targetH` (N), for the current
+ * chain and line lengths. Rest pretension rises monotonically with distance, so a bracketed root is found.
+ * Returns null when the target cannot be reached inside the rigging limit.
+ */
+export function anchorDistanceForPretension(inp: ScenarioInput, targetH: number): number | null {
+  const f = (d: number): number => solveRest(buildModel({ ...inp, anchor: { ...inp.anchor, distance: d } })).rode.h - targetH;
+  const hi = maxAnchorDistance(inp);
+  let lo = Math.max(inp.loa + 1, hi - inp.chain.length - inp.lines.length);
+  if (f(hi) < 0) return null;
+  for (let k = 0; k < 20 && f(lo) > 0; k++) lo = Math.max(1, lo - 5);
+  try {
+    return brent(f, lo, hi, 1e-4);
+  } catch {
+    return null;
+  }
+}
+
+/** True when the whole chain is off the seabed (the anchor is pulled upward). */
+const fullyLifted = (eq: Equilibrium): boolean => eq.rode.grounded <= 1e-9 && !eq.rode.slack;
+
+/**
+ * Mean wind speed (kn) at which the whole chain lifts off the seabed. 0 if it is already lifted at rest,
+ * null if it stays on the seabed up to `maxKn`. Lift is monotonic in wind speed, so bisection is used.
+ */
+export function liftOffWind(inp: ScenarioInput, maxKn = 100): number | null {
+  const model = buildModel(inp);
+  const rest = solveRest(model);
+  if (fullyLifted(rest)) return 0;
+  const lifted = (kn: number): boolean =>
+    fullyLifted(solveEquilibrium(model, knotsToMs(kn), inp.windFromDeg, { initial: rest.pose }));
+  if (!lifted(maxKn)) return null;
+  let lo = 0;
+  let hi = maxKn;
+  while (hi - lo > 0.05) {
+    const mid = (lo + hi) / 2;
+    if (lifted(mid)) hi = mid;
+    else lo = mid;
+  }
+  return hi;
+}
