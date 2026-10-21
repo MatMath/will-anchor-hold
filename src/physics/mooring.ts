@@ -1,4 +1,4 @@
-import { norm, solveLinear } from './numeric';
+import { brent, norm, solveLinear } from './numeric';
 import { solveRode, type Rode, type RodeState } from './catenary';
 import { ropeTension, type RopeType } from './rope';
 import { windDirectionVector, windLoad, type Windage, type WindLoad } from './wind';
@@ -240,30 +240,14 @@ export function solveEquilibrium(
     }
     if (accepted) continue;
 
-    // Drift step: move along the net force until the imbalance drops.
+    // Drift step: let the boat move along the net force until the mooring takes it up.
     const d = r.map((v) => v / rn);
-    const g = (s: number): number => norm(resid(q.map((v, i) => v + s * d[i])));
-    let best = 0;
-    let bestN = rn;
-    for (let s = 1e-4; s <= 4 * m.loa + 200; s *= 2) {
-      const n = g(s);
-      if (n < bestN) {
-        best = s;
-        bestN = n;
-      } else if (best > 0) break;
-    }
-    if (best === 0) break;
-    // Golden-section refine around the best step.
-    let a = best / 2;
-    let b = best * 2;
-    const phi = (Math.sqrt(5) - 1) / 2;
-    for (let k = 0; k < 40; k++) {
-      const c = b - phi * (b - a);
-      const e = a + phi * (b - a);
-      if (g(c) < g(e)) b = e;
-      else a = c;
-    }
-    const s = g((a + b) / 2) < bestN ? (a + b) / 2 : best;
+    const along = (s: number): number => {
+      const rs = resid(q.map((v, i) => v + s * d[i]));
+      return rs[0] * d[0] + rs[1] * d[1] + rs[2] * d[2];
+    };
+    const s = driftStep(along, 4 * m.loa + 400);
+    if (s < 1e-9) break;
     q = q.map((v, i) => v + s * d[i]);
     r = resid(q);
     rn = norm(r);
@@ -282,6 +266,28 @@ export function solveEquilibrium(
     shareChain: wf > 0 ? along(ev.eq.chainForce) / wf : 0,
     shareLines: wf > 0 ? along(lineSum) / wf : 0,
   };
+}
+
+/**
+ * Drift step for a slack (or nearly slack) mooring: how far to move along the net-force direction d.
+ *
+ * f(s) is the net force projected on d after moving s along it; f(0) = |net force| > 0. While the mooring
+ * is slack the boat is pushed on (f > 0); once a line or the chain takes up, the restoring force grows
+ * until f turns negative. The step is the root of f — the equilibrium along that direction — found by
+ * doubling until f changes sign and then Brent. Unlike minimising |net force|, this cannot jump over the
+ * narrow band where stiff lines are just taut. Returns 0 if nothing takes up within sMax.
+ */
+export function driftStep(f: (s: number) => number, sMax: number): number {
+  let s0 = 0;
+  let s1 = 1e-4;
+  let f1 = f(s1);
+  while (f1 > 0 && s1 < sMax) {
+    s0 = s1;
+    s1 *= 2;
+    f1 = f(s1);
+  }
+  if (f1 > 0) return 0;
+  return brent(f, s0, s1, 1e-10);
 }
 
 /**

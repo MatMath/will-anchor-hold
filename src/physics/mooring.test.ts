@@ -4,6 +4,7 @@ import {
   WORKED_EXAMPLE,
   anchorDistanceForPretension,
   buildModel,
+  driftStep,
   liftOffWind,
   maxAnchorDistance,
   lineLengthForPretension,
@@ -173,5 +174,41 @@ describe('slider helpers', () => {
   it('lift-off wind is null when a long chain never lifts', () => {
     const long: ScenarioInput = { ...WORKED_EXAMPLE, chain: { ...WORKED_EXAMPLE.chain, length: 120 }, anchor: { ...WORKED_EXAMPLE.anchor, distance: 130 } };
     expect(liftOffWind(long, 20)).toBeNull();
+  });
+});
+
+describe('slack mooring with long stern lines (regression)', () => {
+  // Anchor at 52 m with 25–26 m stern lines: chain and lines are slack at rest, so the boat must drift
+  // ~20 m sideways before anything tightens. The old drift search could jump over the narrow band where
+  // the stiff lines are just taut and silently return the rest position.
+  const at = (len: number): ScenarioInput => ({ ...WORKED_EXAMPLE, windKn: 20, anchor: { ...WORKED_EXAMPLE.anchor, distance: 52 }, lines: { ...WORKED_EXAMPLE.lines, length: len } });
+
+  it('converges at 20 kn for every line length from 20 to 40 m', () => {
+    for (let len = 20; len <= 40; len += 1) {
+      const m = buildModel(at(len));
+      const r = solveRest(m);
+      expect(r.rode.slack).toBe(true);
+      const e = solveEquilibrium(m, 20 * KNOT, 90, { initial: r.pose });
+      expect(e.converged, `line ${len} m`).toBe(true);
+      expect(e.pose.y).toBeGreaterThan(15);
+      const [fx, fy, mz] = balance(e);
+      expect(Math.hypot(fx, fy)).toBeLessThan(1e-2);
+      expect(Math.abs(mz)).toBeLessThan(1e-1);
+    }
+  });
+
+  it('lift-off wind changes smoothly with line length (25 m vs 26 m)', () => {
+    const a = liftOffWind(at(25));
+    const b = liftOffWind(at(26));
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(Math.abs(a! - b!)).toBeLessThan(1);
+  });
+
+  it('driftStep finds where a stiff line takes up, however narrow', () => {
+    // Pushed with 5 N until s = 10 m, then a 10 kN/m line: equilibrium at s = 10.0005 m.
+    const f = (s: number): number => (s < 10 ? 5 : 5 - 1e4 * (s - 10));
+    expect(driftStep(f, 1000)).toBeCloseTo(10.0005, 6);
+    expect(driftStep(() => 1, 100)).toBe(0);
   });
 });
