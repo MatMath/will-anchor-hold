@@ -15,6 +15,7 @@ uplift curve is the yacht-derived one in section 3.
 | DIN 766 chain MBL | Was 2.5–5.5% too high (unsafe side). **Fixed:** the app now uses the published table |
 | Anchor holding vs uplift angle | Was far harsher than any published source. **Fixed:** yacht-derived curve, see section 3 |
 | Yacht example (Peter Smith, 12 mm × 48 m in 8 m) | Qualitatively **consistent** |
+| Rocna KB "Scope vs catenary" depth chart, simulations and wind loads | **Reproduced**: 7.51:1 vs 7.5:1 at 7 ft; 16 m wind loads −6% beam-on (section 4) |
 
 ## 1. Catenary — two independent checks
 
@@ -112,6 +113,49 @@ floor at 10%. It sits between the offshore standard and the old curve, and
 the yacht tests support it. For the worked example (7.6° uplift) the holding factor went from 0.62 to
 0.86, so the anchor ratio dropped from 151% to 110% — still red.
 
+
+## 4. Rocna Knowledge Base: "Scope vs catenary"
+
+The Rocna KB article (by Peter Smith, Rocna's designer; same material as petersmith.net.nz) makes its
+case with static simulations. Every claim with numbers reproduces with the app's model:
+
+**Depth chart.** 8 mm chain, 500 daN in the system, constant 6.6° pull on the anchor. The Rocna
+text only says the need for scope decreases with depth; the same chart on petersmith.net.nz gives the
+end points: scope "decreases from 7.5:1 in 7′ water to less than 4:1 in nearly 100′". App,
+8 mm DIN 766 chain (1.35 kg/m), scope measured from seabed to bow roller as the article defines it:
+
+| Depth | 7 ft | 15 ft | 30 ft | 60 ft | 95 ft | 100 ft |
+|---|---|---|---|---|---|---|
+| Scope for 6.6° at 500 daN | **7.51:1** | 6.70:1 | 5.76:1 | 4.76:1 | 4.11:1 | 4.04:1 |
+| Same with 1.6 kg/m (heavier 5/16″ US chain) | 7.36:1 | 6.48:1 | 5.52:1 | 4.51:1 | **3.88:1** | 3.82:1 |
+
+The 7 ft value matches exactly; near 100 ft the app gives 3.9–4.1:1 depending on the chain weight
+assumed (the article does not state it).
+
+**20 kn vs 50 kn simulations.** 48 m of 12 mm chain, 8 m from seabed to roller (6:1), 320 daN and
+2 000 daN. The article: at 20 kn the catenary is "obvious"; at 50 kn it "has all but disappeared".
+
+| Horizontal load | On the seabed | Uplift at anchor | Largest gap between chain and straight line |
+|---|---|---|---|
+| 3 200 N | 3.3 m | 0° | 2.27 m |
+| 3 700 N | 0 m (just fully lifted) | 0° | 1.99 m |
+| 10 000 N | 0 m | 6.0° | 0.74 m |
+| 20 000 N | 0 m | 7.8° | 0.37 m |
+
+This also bears out its main point: the load that lifts all the chain is low (3.7 kN here, about
+the 20 kn load), so in a real blow the chain's weight no longer protects the anchor.
+
+**Angles for a straight rode.** "At 8:1 … just over 7°": asin(1/8) = 7.18°. "The scope must be
+doubled in order to halve the angle": 5:1 → 11.5°, 10:1 → 5.7°.
+
+**Wind loads.** The article's loads scale exactly with V² (2 000 / 320 = (50/20)²). With the app's
+windage estimator and beam-on wind, a 16 m monohull gives 302 daN at 20 kn and 1 884 daN at 50 kn
+(article: 320 and 2 000, −6%). A 10 m boat at 40 kn gives 600 daN beam-on and 524 daN with the wind
+30° off the bow (article: 500 daN). The article's figures therefore correspond to a boat yawing well
+off the wind, not lying head to wind (head-on the app gives about a third of that).
+
+Both the app and the article are static; neither includes snatch loads.
+
 ## Sources
 
 - NREL MoorPy, `moorpy.Catenary.catenary` (Jonkman catenary with seabed contact): https://moorpy.readthedocs.io/
@@ -123,3 +167,4 @@ the yacht tests support it. For the worked example (7.6° uplift) the holding fa
 - OTC 7491 (1994), *Vertical Loads on Drag Embedment Anchors*: https://stewart-usa.com/wp-content/uploads/2018/10/OTC-7491-Vertical-Loads-on-Drag-Embedment-Anchors-1994.pdf
 - The Sailing Foundation (1995), *Anchor Tests, Puget Sound* (D. Fryer): https://www.ussailing.org/wp-content/uploads/2018/04/anchor-study.pdf
 - Peter Smith, *Anchor rode catenary*: https://petersmith.net.nz/boat-anchors/catenary.php
+- Rocna Knowledge Base, *Scope vs catenary*: https://kb.rocna.com/kb/Scope_vs_catenary

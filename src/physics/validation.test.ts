@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { chainEA, slackSpan, solveRode, submergedWeight, type Rode } from './index';
+import { chainEA, slackSpan, solveRode, spanForTension, submergedWeight, type Rode } from './index';
+import { brent } from './numeric';
 
 /**
  * Independent check of the closed-form elastic catenary: integrate the chain's equilibrium equations
@@ -53,4 +54,33 @@ describe('catenary — independent numerical integration', () => {
       }
     });
   }
+});
+
+describe('Rocna KB "Scope vs catenary" (Peter Smith) — reproduced', () => {
+  // 8 mm chain, 500 daN in the system, a constant 6.6° pull on the anchor: the required scope falls from
+  // about 7.5:1 in 7 ft of water to about 4:1 near 100 ft (scope measured from seabed to bow roller).
+  const scopeFor = (depthFt: number): number => {
+    const z = depthFt * 0.3048;
+    const angle = (L: number): number => {
+      const rode: Rode = { length: L, w: submergedWeight(1.35), ea: chainEA(8), z };
+      return (solveRode(rode, spanForTension(rode, 5000)).angleAnchor * 180) / Math.PI - 6.6;
+    };
+    return brent(angle, z * 1.05, z * 30, 1e-6) / z;
+  };
+
+  it('7 ft → 7.5:1 and ~100 ft → ~4:1 for a 6.6° pull at 500 daN', () => {
+    expect(scopeFor(7)).toBeCloseTo(7.5, 1);
+    expect(scopeFor(100)).toBeGreaterThan(3.8);
+    expect(scopeFor(100)).toBeLessThan(4.2);
+  });
+
+  it('48 m of 12 mm chain in 8 m: on the seabed at 320 daN, nearly straight at 2000 daN', () => {
+    const rode: Rode = { length: 48, w: submergedWeight(3.1), ea: chainEA(12), z: 8 };
+    const light = solveRode(rode, spanForTension(rode, 3200));
+    const heavy = solveRode(rode, spanForTension(rode, 20000));
+    expect(light.grounded).toBeGreaterThan(2);
+    expect(heavy.grounded).toBe(0);
+    // "nearly straight": bow angle within 2° of the straight line from anchor to roller
+    expect((heavy.angleTop * 180) / Math.PI - (Math.asin(8 / 48) * 180) / Math.PI).toBeLessThan(2);
+  });
 });
