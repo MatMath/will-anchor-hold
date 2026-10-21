@@ -1,0 +1,664 @@
+import './styles.css';
+import workedExampleMd from '../docs/worked-example.md?raw';
+import {
+  ANCHOR_TYPES,
+  BOTTOMS,
+  CHAIN_GRADES,
+  ROPES,
+  estimateWindageItems,
+  knotsToMs,
+  lineLengthForPretension,
+  runScenario,
+  solveEquilibrium,
+  sweep,
+  upliftFactor,
+  type Equilibrium,
+  type ScenarioResult,
+  type SweepPoint,
+} from './physics';
+import { check, num, readControl, segmented, select, syncControls } from './ui/controls';
+import { badge, esc, force, pct, type Units } from './ui/format';
+import { markdown } from './ui/markdown';
+import { renderPlan } from './ui/planView';
+import { resultsTable } from './ui/results';
+import { renderSide } from './ui/sideView';
+import {
+  DEFAULT_STATE,
+  boatDefaults,
+  clearSaved,
+  loadState,
+  resolve,
+  round,
+  saveState,
+  toScenario,
+  workedExampleState,
+  type AppState,
+  type Key,
+} from './ui/state';
+import { toUser, type ViewBox } from './ui/svg';
+import { renderSweep } from './ui/sweepChart';
+import { dialAngle, renderDial } from './ui/windDial';
+
+// ───────────────────────────── Layout ─────────────────────────────
+
+const ropeOpts = Object.entries(ROPES).map(([k, v]) => [k, v.name] as const);
+const diaOpts = (ds: number[]): Array<readonly [number, string]> => ds.map((d) => [d, `${d} mm`] as const);
+
+const app = document.getElementById('app')!;
+app.innerHTML = `
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 4v13m-5-9h10M4 14c0 4 4 6 8 6s8-2 8-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <h1>Med-mooring loads</h1>
+  </div>
+  <div class="top-actions">
+    ${segmented('units', 'Force units', [['kN', 'kN'], ['kgf', 'kgf']])}
+    <button type="button" class="btn" id="btn-example">Worked example</button>
+    <button type="button" class="btn btn-ghost" id="btn-reset">Reset</button>
+  </div>
+</header>
+
+<div class="status-strip" id="status" aria-live="polite"></div>
+
+<main class="layout">
+  <section class="col-vis">
+    <div class="card play">
+      <div class="play-grid">
+        <div class="dial" id="dial" tabindex="0" role="slider" aria-label="Wind direction relative to the bow" aria-valuemin="0" aria-valuemax="359"></div>
+        <div class="play-fields">
+          ${num('windKn', 'Wind speed', 'kn', { min: 0, max: 80, step: 1, slider: [0, 60] })}
+          ${num('windDir', 'Wind from (relative to bow)', '°', { min: 0, max: 359, step: 5, slider: [0, 355] })}
+          <div class="row-btns">
+            ${segmented('viewCase', 'Case shown in the diagrams', [['rest', 'At rest'], ['sustained', 'Sustained'], ['gust', 'Gust']])}
+            <button type="button" class="btn" id="btn-animate" title="Ramp the wind from calm up to the gust and back">▶ Animate gust</button>
+          </div>
+        </div>
+      </div>
+      <div class="play-sliders">
+        ${num('chainLength', 'Chain out', 'm', { min: 5, max: 150, step: 1, slider: [10, 100] })}
+        ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 0.5, slider: [20, 120] })}
+        ${num('lineLength', 'Stern line length', 'm', { min: 0.5, max: 60, step: 0.05, slider: [1, 20] })}
+        ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1, slider: [1, 25] })}
+      </div>
+      <div class="pretension">
+        ${num('pretensionTarget', 'Target chain pretension at rest', 'kN', { min: 0.05, max: 10, step: 0.1 })}
+        <button type="button" class="btn" id="btn-pretension">Set line length for this pretension</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Plan view</h2>
+        <div class="tools">
+          ${segmented('planZoom', 'Zoom', [['all', 'Whole mooring'], ['boat', 'Boat']])}
+          ${segmented('exaggeration', 'Drift exaggeration', [[1, '×1'], [2, '×2'], [5, '×5']])}
+        </div>
+      </div>
+      <svg id="plan" class="plan" role="img" aria-label="Top-down view of the boat, chain and stern lines with force arrows"></svg>
+      <p class="caption">Drag the anchor to move it. Arrows show the horizontal forces on the boat, all to one scale. The dashed outline is the boat at rest; the darker chain is the part lying on the seabed.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Chain — side view</h2>
+        <div class="tools">${segmented('vExag', 'Vertical exaggeration', [[1, 'True scale'], [2, 'Height ×2'], [4, '×4']])}</div>
+      </div>
+      <svg id="side" class="side" role="img" aria-label="Side view of the chain catenary"></svg>
+      <div class="facts" id="facts"></div>
+    </div>
+
+    <div id="warnings"></div>
+
+    <div class="card">
+      <div class="card-head"><h2>Results</h2></div>
+      <div class="table-scroll" id="results"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Loads vs wind speed</h2>
+        <div class="tools">
+          ${segmented('sweepMode', 'Y axis', [['kN', 'Force'], ['pct', '% of limit']])}
+          ${segmented('sweepGust', 'Mean or gust', [['false', 'Mean wind'], ['true', 'At gust']])}
+        </div>
+      </div>
+      <div id="sweep"></div>
+      <p class="caption">"% of limit" = chain and lines against their MBL; anchor against estimated holding (which falls as the chain lifts).</p>
+    </div>
+  </section>
+
+  <aside class="col-inputs" aria-label="Inputs">
+    <details class="card acc" open>
+      <summary><h2>Boat</h2></summary>
+      ${select('boatType', 'Type', [['monohull', 'Monohull sailboat'], ['catamaran', 'Catamaran']], 'Changing type loads typical dimensions for that type.')}
+      <div class="grid2">
+        ${num('loa', 'Length overall', 'm', { min: 5, max: 30, step: 0.1, slider: [6, 20] })}
+        ${num('beam', 'Beam', 'm', { min: 1, max: 15, step: 0.1 })}
+        ${num('displacement', 'Displacement', 'kg', { min: 500, max: 80000, step: 100 })}
+        ${num('freeboard', 'Freeboard', 'm', { min: 0.3, max: 4, step: 0.05 })}
+        ${num('mastHeight', 'Mast height above water', 'm', { min: 0, max: 40, step: 0.5 })}
+        ${num('rollerHeight', 'Bow roller above water', 'm', { min: 0.2, max: 4, step: 0.05 })}
+        ${num('rollerOverhang', 'Roller ahead of stem', 'm', { min: 0, max: 2, step: 0.05 })}
+      </div>
+    </details>
+
+    <details class="card acc" open>
+      <summary><h2>Windage</h2></summary>
+      <div class="grid2">
+        ${num('sideArea', 'Side-profile area', 'm²', { min: 1, max: 200, step: 0.5, auto: 'windageAuto' })}
+        ${num('frontArea', 'Frontal area', 'm²', { min: 0.5, max: 100, step: 0.5, auto: 'windageAuto' })}
+        ${num('cdSide', 'Cd side-on', '', { min: 0.3, max: 2, step: 0.05, hint: 'Typical 0.9–1.2 (blunt shape).' })}
+        ${num('cdFront', 'Cd head-on', '', { min: 0.3, max: 2, step: 0.05, hint: 'Typical 0.7–0.9. Head-on loads are low mainly because the <em>area</em> is small.' })}
+        ${num('ceX', 'Centre of effort, from midships', 'm (+ fwd)', { min: -15, max: 15, step: 0.1, auto: 'windageAuto' })}
+      </div>
+      <details class="sub">
+        <summary>Windage helper — hull, cabin, mast, boom, bimini, dinghy…</summary>
+        <p class="hint">Tick what is on board and adjust any area. Totals feed the inputs above while they show <em>auto</em>.</p>
+        <div class="table-scroll"><table class="witems" id="witems"></table></div>
+        <button type="button" class="btn btn-ghost" id="btn-reestimate">Re-estimate from boat dimensions</button>
+      </details>
+    </details>
+
+    <details class="card acc" open>
+      <summary><h2>Wind</h2></summary>
+      <div class="grid2">
+        ${num('windKn', 'Mean wind speed', 'kn', { min: 0, max: 80, step: 1 })}
+        ${num('windDir', 'Direction from, relative to bow', '°', { min: 0, max: 359, step: 1, hint: '90 = starboard beam, 270 = port beam, 0 = on the bow.' })}
+        ${num('gustFactor', 'Gust factor (on speed)', '×', { min: 1, max: 2.5, step: 0.05, hint: 'Gust speed ÷ mean speed. Force grows with its square.' })}
+      </div>
+      <p class="hint">No current is applied, so the water gives no steady sideways resistance.</p>
+    </details>
+
+    <details class="card acc" open>
+      <summary><h2>Anchor &amp; chain</h2></summary>
+      <div class="grid2">
+        ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1 })}
+        ${select('chainD', 'Chain diameter', diaOpts([6, 8, 10, 12, 13, 14]))}
+        ${select('chainGrade', 'Chain grade (galvanised)', Object.entries(CHAIN_GRADES).map(([k, v]) => [k, v.name] as const))}
+        ${num('chainKgPerM', 'Chain weight in air', 'kg/m', { min: 0.2, max: 10, step: 0.05, auto: 'chainKgAuto' })}
+        ${num('chainMbl', 'Chain MBL', 'kN', { min: 1, max: 500, step: 0.1, auto: 'chainMblAuto', hint: 'Auto: grade stress × 2 legs × πd²/4.' })}
+        ${num('chainLength', 'Chain deployed', 'm', { min: 5, max: 150, step: 1 })}
+        ${num('anchorDistance', 'Anchor → quay, horizontal', 'm', { min: 10, max: 200, step: 0.5 })}
+        ${num('anchorOffset', 'Anchor offset sideways', 'm (+ port)', { min: -50, max: 50, step: 0.5 })}
+      </div>
+      <h3>Holding check</h3>
+      <div class="grid2">
+        ${select('anchorType', 'Anchor type', Object.entries(ANCHOR_TYPES))}
+        ${num('anchorMass', 'Anchor mass', 'kg', { min: 2, max: 200, step: 1 })}
+        ${select('bottom', 'Bottom', Object.entries(BOTTOMS))}
+        ${num('holdingRatio', 'Holding ratio', 'kgf per kg', { min: 1, max: 150, step: 1, auto: 'holdingAuto', hint: 'Rough, well-set values. Reduced automatically when the chain lifts the shank.' })}
+      </div>
+    </details>
+
+    <details class="card acc">
+      <summary><h2>Snubber</h2></summary>
+      ${check('snubberOn', 'Use a snubber (bridle) between bow and chain')}
+      <div class="grid2" data-show-if="snubberOn">
+        ${select('snubberType', 'Rope', ropeOpts)}
+        ${select('snubberD', 'Diameter', diaOpts([10, 12, 14, 16, 18, 20, 22, 24]))}
+        ${num('snubberLength', 'Length', 'm', { min: 0.5, max: 30, step: 0.5 })}
+        ${num('snubberMbl', 'MBL', 'kN', { min: 1, max: 500, step: 0.1, auto: 'snubberMblAuto' })}
+      </div>
+    </details>
+
+    <details class="card acc" open>
+      <summary><h2>Stern lines</h2></summary>
+      <div class="grid2">
+        ${select('lineCount', 'Number of lines', [[1, '1 line'], [2, '2 lines']])}
+        <div data-show-if="lineCount=1">${select('singleAttach', 'Cleat used', [['port', 'Port quarter'], ['centre', 'Centre (bridle)'], ['starboard', 'Starboard quarter']])}</div>
+        <div data-show-if="lineCount=2">${check('crossed', 'Lines crossed', 'Port cleat to the starboard ring and vice versa.')}</div>
+        ${select('lineType', 'Rope', ropeOpts)}
+        ${select('lineD', 'Diameter', diaOpts([8, 10, 12, 14, 16, 18, 20, 22, 24]))}
+        ${num('lineMbl', 'MBL (catalogue, each)', 'kN', { min: 1, max: 500, step: 0.1, auto: 'lineMblAuto' })}
+        ${num('lineEfficiency', 'Knot / splice efficiency', '%', { min: 30, max: 100, step: 5, hint: 'Splice ≈ 90%, bowline ≈ 60–70%, cleat hitch ≈ 80%.' })}
+        ${num('lineLength', 'Length, cleat → shore point (each)', 'm', { min: 0.5, max: 60, step: 0.05 })}
+        ${num('cleatSpacing', 'Stern cleats apart', 'm', { min: 0, max: 15, step: 0.1 })}
+        ${num('cleatInset', 'Cleats forward of transom', 'm', { min: 0, max: 3, step: 0.05 })}
+        ${num('cleatHeight', 'Cleat height above water', 'm', { min: 0, max: 4, step: 0.05 })}
+        ${num('shoreSpread', 'Shore points apart', 'm', { min: 0, max: 30, step: 0.5, hint: '0 = both lines to one ring or rock.' })}
+        ${num('shoreHeight', 'Shore point above water', 'm', { min: -1, max: 5, step: 0.1 })}
+      </div>
+    </details>
+
+    <details class="card acc">
+      <summary><h2>Dynamic estimate</h2></summary>
+      ${num('snatchSpeed', 'Boat speed stopped by the mooring', 'm/s', { min: 0, max: 3, step: 0.1, hint: 'Used only for the indicative snatch-load figure: ΔF = v·√(m·k).' })}
+    </details>
+  </aside>
+</main>
+
+<section class="card notes">
+  <h2>Assumptions &amp; limits</h2>
+  <ul>
+    <li><strong>Quasi-static</strong>: forces are balanced at each wind speed; no inertia, no waves, no dynamic yawing (sheering). The boat's steady heading change <em>is</em> solved: sideways shift, fore-aft shift and rotation (3 degrees of freedom).</li>
+    <li><strong>Wind</strong>: F = ½·ρ·Cd·A·V² with ρ = 1.225 kg/m³, applied at one centre of effort, acting straight downwind (no lift). Area and Cd blend as A·|sin θ| + A·|cos θ| with the apparent angle. Uniform wind, no height gradient.</li>
+    <li><strong>No current</strong> and no hull resistance: in steady state only the chain and the lines hold the boat.</li>
+    <li><strong>Chain</strong>: elastic catenary (Irvine) on a flat, frictionless seabed, submerged weight throughout (the bit above water is slightly heavier). The anchor is a fixed point.</li>
+    <li><strong>Stern lines</strong>: straight (no sag), with the typical load–stretch curve of the chosen rope. Real ropes differ ±20% from catalogue values; wet nylon is weaker and stretchier.</li>
+    <li><strong>Anchor holding</strong> is an order-of-magnitude guide only. Thresholds: amber above 50%, red above 80% of the estimate.</li>
+    <li><strong>Safety colours</strong> for chain, snubber and lines: amber above 30% MBL, red above 50% MBL. MBL is a breaking load, not a working load.</li>
+  </ul>
+  <details class="sub">
+    <summary>Worked example — check the numbers by hand</summary>
+    <div class="md">${markdown(workedExampleMd)}</div>
+  </details>
+</section>
+<div class="toast" id="toast" role="status" hidden></div>
+`;
+
+// ───────────────────────────── State ─────────────────────────────
+
+let state: AppState = loadState();
+let result: ScenarioResult | null = null;
+let error: string | null = null;
+let points: SweepPoint[] = [];
+let animWind: number | null = null;
+let animEq: Equilibrium | null = null;
+let planFrozen: ViewBox | undefined;
+let sideFrozen: ViewBox | undefined;
+
+/** Value keys that switch their "auto" flag off when edited by hand. */
+const AUTO_OF: Partial<Record<Key, Key>> = {
+  sideArea: 'windageAuto',
+  frontArea: 'windageAuto',
+  ceX: 'windageAuto',
+  chainKgPerM: 'chainKgAuto',
+  chainMbl: 'chainMblAuto',
+  snubberMbl: 'snubberMblAuto',
+  lineMbl: 'lineMblAuto',
+  holdingRatio: 'holdingAuto',
+};
+const DIM_KEYS: Key[] = ['loa', 'beam', 'freeboard', 'mastHeight', 'boatType'];
+
+function update(patch: Partial<AppState>): void {
+  let next = { ...state, ...patch };
+  if ('boatType' in patch && patch.boatType !== state.boatType) next = { ...next, ...boatDefaults(next.boatType, next.loa) };
+  if (DIM_KEYS.some((k) => k in patch) && !next.windageItemsEdited) {
+    const enabled = new Map(state.windageItems.map((i) => [i.id, i.enabled]));
+    next.windageItems = estimateWindageItems({ type: next.boatType, loa: next.loa, beam: next.beam, freeboard: next.freeboard, mastHeight: next.mastHeight }).map(
+      (i) => ({ ...i, enabled: enabled.get(i.id) ?? i.enabled }),
+    );
+  }
+  state = resolve(next);
+  saveState(state);
+  schedule();
+}
+
+// ───────────────────────────── Compute + render ─────────────────────────────
+
+let pending = false;
+let frame = 0;
+let fallback: number | undefined;
+let sweepTimer: number | undefined;
+function schedule(): void {
+  if (!pending) {
+    pending = true;
+    // rAF coalesces slider drags; the timer covers background tabs where rAF is paused.
+    const run = (): void => {
+      if (!pending) return;
+      pending = false;
+      cancelAnimationFrame(frame);
+      window.clearTimeout(fallback);
+      compute();
+      render();
+    };
+    frame = requestAnimationFrame(run);
+    fallback = window.setTimeout(run, 80);
+  }
+  window.clearTimeout(sweepTimer);
+  sweepTimer = window.setTimeout(() => {
+    computeSweep();
+    renderSweepChart();
+  }, 120);
+}
+
+function compute(): void {
+  try {
+    result = runScenario(toScenario(state));
+    error = null;
+  } catch (e) {
+    result = null;
+    error = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function computeSweep(): void {
+  if (!result) {
+    points = [];
+    return;
+  }
+  const speeds = Array.from({ length: 51 }, (_, i) => 10 + i);
+  points = sweep(toScenario(state), speeds, state.sweepGust ? state.gustFactor : 1);
+}
+
+const $ = <T extends Element = HTMLElement>(sel: string): T => document.querySelector<T>(sel)!;
+
+function shownEq(r: ScenarioResult): { eq: Equilibrium; label: string } {
+  if (animWind !== null && animEq) return { eq: animEq, label: `Animating — ${animWind.toFixed(0)} kn` };
+  if (state.viewCase === 'rest') return { eq: r.rest, label: 'At rest (no wind)' };
+  if (state.viewCase === 'gust') return { eq: r.gust.eq, label: `Gust — ${r.gust.windKn.toFixed(0)} kn` };
+  return { eq: r.sustained.eq, label: `Sustained — ${r.sustained.windKn.toFixed(0)} kn` };
+}
+
+function render(): void {
+  syncControls(document, state);
+  renderDial($('#dial'), state.windDir, state.windKn);
+  renderWindageItems();
+  const u = state.units as Units;
+
+  const warn = $('#warnings');
+  if (!result) {
+    $('#status').innerHTML = '';
+    warn.innerHTML = `<div class="alert alert-red"><strong>Cannot solve:</strong> ${esc(error ?? 'unknown error')}</div>`;
+    return;
+  }
+  const r = result;
+  const { eq, label } = shownEq(r);
+
+  // Status strip: sustained → gust for each element
+  const chip = (name: string, a: { status: 'green' | 'amber' | 'red'; ratio: number }, b: { status: 'green' | 'amber' | 'red'; ratio: number }, cls: string): string =>
+    `<div class="chip"><span class="key ${cls}" aria-hidden="true"></span><span class="chip-name">${name}</span>${badge(a.status, pct(a.ratio))}<span class="arrow" aria-label="then in gust">→</span>${badge(b.status, pct(b.ratio))}</div>`;
+  const chips = [chip('Chain', r.sustained.chain, r.gust.chain, 'k-chain')];
+  if (r.sustained.snubber && r.gust.snubber) chips.push(chip('Snubber', r.sustained.snubber, r.gust.snubber, 'k-snub'));
+  r.sustained.lines.forEach((l, i) => chips.push(chip(state.lineCount === 1 ? 'Line' : i === 0 ? 'Port line' : 'Stbd line', l, r.gust.lines[i], `k-line${i + 1}`)));
+  chips.push(chip('Anchor', r.sustained.anchor, r.gust.anchor, 'k-anchor'));
+  $('#status').innerHTML = `<div class="chips">${chips.join('')}</div><div class="wind-sum">Wind <strong>${force(r.sustained.eq.wind.force, u)}</strong> → gust <strong>${force(r.gust.eq.wind.force, u)}</strong> · side shift <strong>${Math.abs(r.sustained.drift.dy).toFixed(1)} m</strong> → <strong>${Math.abs(r.gust.drift.dy).toFixed(1)} m</strong></div>`;
+
+  // Diagrams
+  const forceRef = Math.max(
+    r.gust.eq.wind.force,
+    r.gust.eq.rode.h,
+    ...r.gust.eq.lines.map((l) => Math.hypot(l.force[0], l.force[1])),
+    animEq ? animEq.rode.h : 0,
+    1,
+  );
+  renderPlan($<SVGSVGElement>('#plan'), { s: state, model: r.model, rest: r.rest, eq, forceRef, label, frozen: planFrozen });
+  const xMax = Math.max(r.gust.eq.rode.x, r.rest.rode.x, eq.rode.x);
+  renderSide($<SVGSVGElement>('#side'), { s: state, rode: r.model.rode, rest: r.rest.rode, st: eq.rode, xMax, frozen: sideFrozen });
+
+  const st = eq.rode;
+  $('#facts').innerHTML = [
+    ['Bow tension', force(st.tensionTop, u)],
+    ['At anchor', force(st.tensionAnchor, u)],
+    ['Lifted', `${st.suspended.toFixed(1)} of ${state.chainLength} m`],
+    ['Uplift at anchor', `${((st.angleAnchor * 180) / Math.PI).toFixed(1)}°`],
+    ['Anchor pull', st.vAnchor > 0 ? '<strong class="warn-text">⚠ upward</strong>' : 'horizontal'],
+  ]
+    .map(([k, v]) => `<div><span>${k}</span><strong>${v}</strong></div>`)
+    .join('');
+
+  // Warnings
+  const w = r.warnings.map((t) => `<li>${esc(t)}</li>`).join('');
+  const peak = r.gust.eq.wind.force + 2 * (r.gust.eq.wind.force - r.sustained.eq.wind.force);
+  warn.innerHTML = `
+    ${w ? `<div class="alert alert-amber"><strong>Check the set-up</strong><ul>${w}</ul></div>` : ''}
+    <div class="alert alert-info">
+      <strong>⚠ These are static loads.</strong> A gust or a wave snatch load can be several times the static load.
+      A sudden gust on an elastic mooring can overshoot to about <strong>${force(peak, u)}</strong> of wind load (2 × the gust increment).
+      A ${state.snatchSpeed} m/s surge stopped by the mooring adds about <strong>${force(r.gust.snatch.force, u)}</strong>.
+      ${state.snubberOn ? 'Your snubber lowers the mooring stiffness and so the snatch load.' : 'A nylon <strong>snubber</strong>, or longer nylon stern lines, adds elasticity and cuts snatch loads sharply. Try one in the Snubber section.'}
+    </div>`;
+
+  $('#results').innerHTML = resultsTable(state, r);
+}
+
+function renderSweepChart(): void {
+  const host = $('#sweep');
+  if (!result || !points.length) {
+    host.innerHTML = '';
+    return;
+  }
+  const r = result;
+  const effLine = state.lineMbl * 1000 * (state.lineEfficiency / 100);
+  const series = [
+    { id: 'chain', name: 'Chain (bow)', cls: 's-chain', values: points.map((p) => p.chain), limit: () => state.chainMbl * 1000 },
+    ...points[0].lines.map((_, i) => ({
+      id: `line${i}`,
+      name: state.lineCount === 1 ? 'Stern line' : i === 0 ? 'Port line' : 'Stbd line',
+      cls: `s-line${i + 1}`,
+      values: points.map((p) => p.lines[i]),
+      limit: () => effLine,
+    })),
+    {
+      id: 'anchor',
+      name: 'Anchor load',
+      cls: 's-anchor',
+      values: points.map((p) => p.anchor),
+      limit: (i: number) => r.sustained.anchor.holdingFlat * upliftFactor(points[i].upliftDeg),
+    },
+  ];
+  renderSweep(host, { s: state, points, series });
+}
+
+function renderWindageItems(): void {
+  const t = $<HTMLTableElement>('#witems');
+  if (document.activeElement && t.contains(document.activeElement)) return;
+  t.innerHTML = `<thead><tr><th>On</th><th>Item</th><th>Side m²</th><th>Front m²</th><th>x m</th></tr></thead><tbody>${state.windageItems
+    .map(
+      (it, i) => `<tr${it.enabled ? '' : ' class="off"'}>
+      <td><input type="checkbox" data-witem="${i}" data-wfield="enabled"${it.enabled ? ' checked' : ''} aria-label="Include ${esc(it.name)}"></td>
+      <td>${esc(it.name)}</td>
+      <td><input type="number" step="0.1" min="0" data-witem="${i}" data-wfield="side" value="${it.side}" aria-label="${esc(it.name)} side area"></td>
+      <td><input type="number" step="0.1" min="0" data-witem="${i}" data-wfield="front" value="${it.front}" aria-label="${esc(it.name)} frontal area"></td>
+      <td><input type="number" step="0.1" data-witem="${i}" data-wfield="x" value="${it.x}" aria-label="${esc(it.name)} position from midships"></td>
+    </tr>`,
+    )
+    .join('')}</tbody>`;
+}
+
+// ───────────────────────────── Events ─────────────────────────────
+
+document.addEventListener('input', (ev) => {
+  const el = ev.target as HTMLInputElement | HTMLSelectElement;
+  if (el.dataset.witem !== undefined) {
+    const i = Number(el.dataset.witem);
+    const f = el.dataset.wfield as 'enabled' | 'side' | 'front' | 'x';
+    const items = state.windageItems.map((it) => ({ ...it }));
+    if (f === 'enabled') items[i].enabled = (el as HTMLInputElement).checked;
+    else {
+      const v = parseFloat(el.value);
+      if (!Number.isFinite(v)) return;
+      items[i][f] = v;
+    }
+    update({ windageItems: items, windageItemsEdited: f === 'enabled' ? state.windageItemsEdited : true, windageAuto: true });
+    return;
+  }
+  const key = el.dataset.key as Key | undefined;
+  if (!key) return;
+  const v = readControl(el);
+  if (v === undefined) return;
+  const patch: Partial<AppState> = { [key]: v } as Partial<AppState>;
+  const autoKey = AUTO_OF[key];
+  if (autoKey) (patch as Record<string, unknown>)[autoKey] = false;
+  update(patch);
+});
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target as HTMLElement;
+  const seg = t.closest<HTMLButtonElement>('[data-seg]');
+  if (seg) {
+    const key = seg.dataset.seg as Key;
+    const raw = seg.dataset.value!;
+    const v = seg.dataset.type === 'number' ? Number(raw) : raw === 'true' ? true : raw === 'false' ? false : raw;
+    update({ [key]: v } as Partial<AppState>);
+    if (key === 'sweepGust' || key === 'sweepMode' || key === 'units') {
+      if (key === 'sweepGust') computeSweep();
+      renderSweepChart();
+    }
+    return;
+  }
+  const auto = t.closest<HTMLButtonElement>('[data-auto]');
+  if (auto) {
+    const k = auto.dataset.auto as Key;
+    update({ [k]: !state[k] } as Partial<AppState>);
+    return;
+  }
+  if (t.closest('#btn-pretension')) {
+    try {
+      const len = lineLengthForPretension(toScenario(state), state.pretensionTarget * 1000);
+      update({ lineLength: round(len, 3) });
+      toast(`Stern line length set to ${len.toFixed(2)} m`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e));
+    }
+  } else if (t.closest('#btn-example')) {
+    state = workedExampleState(state);
+    saveState(state);
+    schedule();
+    toast('Loaded the worked example (see the bottom of the page)');
+  } else if (t.closest('#btn-reset')) {
+    if (!confirm('Reset all inputs to the defaults?')) return;
+    clearSaved();
+    state = resolve({ ...DEFAULT_STATE, units: state.units });
+    saveState(state);
+    schedule();
+  } else if (t.closest('#btn-reestimate')) {
+    update({
+      windageItemsEdited: false,
+      windageAuto: true,
+      windageItems: estimateWindageItems({ type: state.boatType, loa: state.loa, beam: state.beam, freeboard: state.freeboard, mastHeight: state.mastHeight }),
+    });
+  } else if (t.closest('#btn-animate')) {
+    animate();
+  }
+});
+
+let toastTimer: number | undefined;
+function toast(msg: string): void {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.hidden = false;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (el.hidden = true), 3200);
+}
+
+// Wind dial
+const dial = $('#dial');
+dial.addEventListener('pointerdown', (ev) => {
+  dial.setPointerCapture(ev.pointerId);
+  update({ windDir: dialAngle(dial, ev) });
+});
+dial.addEventListener('pointermove', (ev) => {
+  if (dial.hasPointerCapture(ev.pointerId)) update({ windDir: dialAngle(dial, ev) });
+});
+dial.addEventListener('keydown', (ev) => {
+  const d = ev.key === 'ArrowRight' || ev.key === 'ArrowUp' ? 5 : ev.key === 'ArrowLeft' || ev.key === 'ArrowDown' ? -5 : 0;
+  if (!d) return;
+  ev.preventDefault();
+  update({ windDir: (state.windDir + d + 360) % 360 });
+});
+
+// Drag the anchor (plan) and the water level (side view)
+let dragging: 'anchor' | 'depth' | null = null;
+let dragStart = { y: 0, depth: 0 };
+const plan = $<SVGSVGElement>('#plan');
+const currentView = (svg: SVGSVGElement): ViewBox => {
+  const b = svg.viewBox.baseVal;
+  return { x: b.x, y: b.y, w: b.width, h: b.height };
+};
+const side = $<SVGSVGElement>('#side');
+
+plan.addEventListener('pointerdown', (ev) => {
+  if (!(ev.target as Element).closest('.drag-anchor')) return;
+  dragging = 'anchor';
+  planFrozen = currentView(plan);
+  plan.setPointerCapture(ev.pointerId);
+  ev.preventDefault();
+});
+plan.addEventListener('pointermove', (ev) => {
+  if (dragging !== 'anchor') return;
+  const [x, y] = toUser(plan, ev);
+  const minD = state.loa + 2;
+  update({ anchorDistance: Math.max(minD, round(x * 2, 0) / 2), anchorOffset: round(-y * 2, 0) / 2 });
+});
+const endDrag = (): void => {
+  if (!dragging) return;
+  dragging = null;
+  planFrozen = undefined;
+  sideFrozen = undefined;
+  schedule();
+};
+plan.addEventListener('pointerup', endDrag);
+plan.addEventListener('pointercancel', endDrag);
+plan.addEventListener('keydown', (ev) => {
+  if (!(ev.target as Element).closest('.drag-anchor')) return;
+  const step = 0.5;
+  const map: Record<string, [number, number]> = { ArrowRight: [step, 0], ArrowLeft: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+  const d = map[ev.key];
+  if (!d) return;
+  ev.preventDefault();
+  update({ anchorDistance: state.anchorDistance + d[0], anchorOffset: state.anchorOffset + d[1] });
+});
+
+side.addEventListener('pointerdown', (ev) => {
+  if (!(ev.target as Element).closest('.drag-depth')) return;
+  dragging = 'depth';
+  sideFrozen = currentView(side);
+  dragStart = { y: toUser(side, ev)[1], depth: state.depth };
+  side.setPointerCapture(ev.pointerId);
+  ev.preventDefault();
+});
+side.addEventListener('pointermove', (ev) => {
+  if (dragging !== 'depth') return;
+  const y = toUser(side, ev)[1];
+  const maxDepth = state.chainLength - state.rollerHeight - 0.5;
+  update({ depth: Math.min(maxDepth, Math.max(0.5, round(dragStart.depth - (y - dragStart.y) / state.vExag, 1))) });
+});
+side.addEventListener('pointerup', endDrag);
+side.addEventListener('pointercancel', endDrag);
+side.addEventListener('keydown', (ev) => {
+  if (!(ev.target as Element).closest('.drag-depth')) return;
+  const d = ev.key === 'ArrowUp' ? 0.1 : ev.key === 'ArrowDown' ? -0.1 : 0;
+  if (!d) return;
+  ev.preventDefault();
+  update({ depth: Math.max(0.5, round(state.depth + d, 1)) });
+});
+
+// Gust animation: calm → mean → gust → hold → mean, solved live each frame.
+let animRun = 0;
+function animate(): void {
+  if (!result) return;
+  const run = ++animRun;
+  const model = result.model;
+  const mean = state.windKn;
+  const gust = state.windKn * state.gustFactor;
+  const keys: Array<[number, number]> = [
+    [0, 0],
+    [1400, mean],
+    [2000, mean],
+    [2900, gust],
+    [3900, gust],
+    [5000, mean],
+  ];
+  let pose = result.rest.pose;
+  const t0 = performance.now();
+  const tick = (now: number): void => {
+    if (run !== animRun) return;
+    const t = now - t0;
+    if (t > keys[keys.length - 1][0]) {
+      animWind = null;
+      animEq = null;
+      schedule();
+      return;
+    }
+    let i = 0;
+    while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
+    const [ta, wa] = keys[i];
+    const [tb, wb] = keys[i + 1];
+    const e = (t - ta) / (tb - ta);
+    const s = e * e * (3 - 2 * e);
+    animWind = wa + (wb - wa) * s;
+    animEq = solveEquilibrium(model, knotsToMs(animWind), state.windDir, { initial: pose });
+    pose = animEq.pose;
+    render();
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+window.addEventListener('resize', () => schedule());
+
+compute();
+render();
+computeSweep();
+renderSweepChart();
