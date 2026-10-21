@@ -1,11 +1,11 @@
 import { chainEA, chainMbl } from './chain';
 import { ropeMbl } from './rope';
-import type { ScenarioInput } from './scenario';
+import { LINE_EFFICIENCY, sternCleatSpacing, type ScenarioInput } from './scenario';
 
 /**
  * The worked example in docs/worked-example.md: a 12.8 m monohull Med-moored with 40 m of 10 mm
  * DIN 766 chain in 6 m of water, two 14 mm nylon stern lines, 30 kn on the starboard beam.
- * The stern-line length (6.454 m) gives ≈ 1 kN of chain pretension at rest.
+ * The stern-line length (6.455 m) gives ≈ 1 kN of chain pretension at rest.
  */
 export const WORKED_EXAMPLE: ScenarioInput = {
   loa: 12.8,
@@ -25,9 +25,9 @@ export const WORKED_EXAMPLE: ScenarioInput = {
     count: 2,
     rope: 'nylon3',
     mbl: ropeMbl('nylon3', 14),
-    efficiency: 0.85,
-    length: 6.454,
-    cleatSpacing: 3.4,
+    efficiency: LINE_EFFICIENCY,
+    length: 6.455,
+    cleatSpacing: sternCleatSpacing('monohull', 4.2), // 3.36 m
     cleatInset: 0.3,
     cleatHeight: 1.2,
     shoreSpread: 4,

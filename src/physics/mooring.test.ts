@@ -141,7 +141,7 @@ describe('scenario + sweep', () => {
 
 describe('slider helpers', () => {
   it('max anchor distance = stern line + boat + roller + chain', () => {
-    expect(maxAnchorDistance(WORKED_EXAMPLE)).toBeCloseTo(6.454 + 12.8 + 0.3 + 40, 9);
+    expect(maxAnchorDistance(WORKED_EXAMPLE)).toBeCloseTo(6.455 + 12.8 + 0.3 + 40, 9);
   });
 
   it('balanced anchor distance reproduces the target pretension (worked example ≈ 58 m for 1 kN)', () => {

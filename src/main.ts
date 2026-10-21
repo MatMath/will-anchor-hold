@@ -2,6 +2,7 @@ import './styles.css';
 import workedExampleMd from '../docs/worked-example.md?raw';
 import {
   ANCHOR_TYPES,
+  LINE_EFFICIENCY,
   BOTTOMS,
   CHAIN_GRADES,
   ROPES,
@@ -11,7 +12,9 @@ import {
   lineLengthForPretension,
   liftOffWind,
   maxAnchorDistance,
+  buildModel,
   runScenario,
+  solveRest,
   solveEquilibrium,
   sweep,
   upliftFactor,
@@ -79,8 +82,8 @@ app.innerHTML = `
       </div>
       <div class="play-sliders">
         ${num('chainLength', 'Chain out', 'm', { min: 5, max: 150, step: 1, slider: [10, 100], id: 'play-chain', hint: '<span id="chain-hint"></span>' })}
-        ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 0.1, slider: [20, 120], id: 'play-anchor', hint: '<span id="snap-hint"></span>' })}
-        ${num('lineLength', 'Stern line length', 'm', { min: 0.5, max: 60, step: 0.05, slider: [1, 20] })}
+        ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 1, slider: [20, 120], id: 'play-anchor', hint: '<span id="snap-hint"></span>' })}
+        ${num('lineLength', 'Stern line length', 'm', { min: 1, max: 80, step: 1, slider: [1, 80] })}
         ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1, slider: [1, 25] })}
       </div>
       <div class="pretension">
@@ -162,15 +165,6 @@ app.innerHTML = `
       </details>
     </details>
 
-    <details class="card acc" open>
-      <summary><h2>Wind</h2></summary>
-      <div class="grid2">
-        ${num('windKn', 'Mean wind speed', 'kn', { min: 0, max: 80, step: 1 })}
-        ${num('windDir', 'Direction from, relative to bow', '°', { min: 0, max: 359, step: 1, hint: '90 = starboard beam, 270 = port beam, 0 = on the bow.' })}
-        ${num('gustFactor', 'Gust factor (on speed)', '×', { min: 1, max: 2.5, step: 0.05, hint: 'Gust speed ÷ mean speed. Force grows with its square.' })}
-      </div>
-      <p class="hint">No current is applied, so the water gives no steady sideways resistance.</p>
-    </details>
 
     <details class="card acc" open>
       <summary><h2>Anchor &amp; chain</h2></summary>
@@ -181,7 +175,7 @@ app.innerHTML = `
         ${num('chainKgPerM', 'Chain weight in air', 'kg/m', { min: 0.2, max: 10, step: 0.05, auto: 'chainKgAuto' })}
         ${num('chainMbl', 'Chain MBL', 'kN', { min: 1, max: 500, step: 0.1, auto: 'chainMblAuto', hint: 'Auto: grade stress × 2 legs × πd²/4.' })}
         ${num('chainLength', 'Chain deployed', 'm', { min: 5, max: 150, step: 1 })}
-        ${num('anchorDistance', 'Anchor → quay, horizontal', 'm', { min: 10, max: 200, step: 0.5 })}
+        ${num('anchorDistance', 'Anchor → quay, horizontal', 'm', { min: 10, max: 200, step: 1 })}
         ${num('anchorOffset', 'Anchor offset sideways', 'm (+ port)', { min: -50, max: 50, step: 0.5 })}
       </div>
       <h3>Holding check</h3>
@@ -213,9 +207,7 @@ app.innerHTML = `
         ${select('lineType', 'Rope', ropeOpts)}
         ${select('lineD', 'Diameter', diaOpts([8, 10, 12, 14, 16, 18, 20, 22, 24]))}
         ${num('lineMbl', 'MBL (catalogue, each)', 'kN', { min: 1, max: 500, step: 0.1, auto: 'lineMblAuto' })}
-        ${num('lineEfficiency', 'Knot / splice efficiency', '%', { min: 30, max: 100, step: 5, hint: 'Splice ≈ 90%, bowline ≈ 60–70%, cleat hitch ≈ 80%.' })}
-        ${num('lineLength', 'Length, cleat → shore point (each)', 'm', { min: 0.5, max: 60, step: 0.05 })}
-        ${num('cleatSpacing', 'Stern cleats apart', 'm', { min: 0, max: 15, step: 0.1 })}
+        ${num('lineLength', 'Length, cleat → shore point (each)', 'm', { min: 1, max: 80, step: 1 })}
         ${num('cleatInset', 'Cleats forward of transom', 'm', { min: 0, max: 3, step: 0.05 })}
         ${num('cleatHeight', 'Cleat height above water', 'm', { min: 0, max: 4, step: 0.05 })}
         ${num('shoreSpread', 'Shore points apart', 'm', { min: 0, max: 30, step: 0.5, hint: '0 = both lines to one ring or rock.' })}
@@ -226,6 +218,15 @@ app.innerHTML = `
     <details class="card acc">
       <summary><h2>Dynamic estimate</h2></summary>
       ${num('snatchSpeed', 'Boat speed stopped by the mooring', 'm/s', { min: 0, max: 3, step: 0.1, hint: 'Used only for the indicative snatch-load figure: ΔF = v·√(m·k).' })}
+    </details>
+    <details class="card acc" open>
+      <summary><h2>Wind</h2></summary>
+      <div class="grid2">
+        ${num('windKn', 'Mean wind speed', 'kn', { min: 0, max: 80, step: 1 })}
+        ${num('windDir', 'Direction from, relative to bow', '°', { min: 0, max: 359, step: 1, hint: '90 = starboard beam, 270 = port beam, 0 = on the bow.' })}
+        ${num('gustFactor', 'Gust factor (on speed)', '×', { min: 1, max: 2.5, step: 0.05, hint: 'Gust speed ÷ mean speed. Force grows with its square.' })}
+      </div>
+      <p class="hint">No current is applied, so the water gives no steady sideways resistance.</p>
     </details>
   </aside>
 </main>
@@ -259,6 +260,9 @@ let points: SweepPoint[] = [];
 let liftKn: number | null = null;
 /** Anchor → quay distance giving the target pretension at rest (slider snap point). */
 let snapD: number | null = null;
+/** Exact balanced distance and the rest pretension at the whole-metre snap point. */
+let snapExact: number | null = null;
+let snapH = 0;
 let animWind: number | null = null;
 let animEq: Equilibrium | null = null;
 let planFrozen: ViewBox | undefined;
@@ -346,7 +350,9 @@ function computeDerived(): void {
   }
   try {
     const d = anchorDistanceForPretension(inp, state.pretensionTarget * 1000);
-    snapD = d === null ? null : round(d, 1);
+    snapExact = d;
+    snapD = d === null ? null : Math.round(d);
+    snapH = snapD === null ? 0 : solveRest(buildModel({ ...inp, anchor: { ...inp.anchor, distance: snapD } })).rode.h;
   } catch {
     snapD = null;
   }
@@ -440,7 +446,7 @@ function renderSweepChart(): void {
     return;
   }
   const r = result;
-  const effLine = state.lineMbl * 1000 * (state.lineEfficiency / 100);
+  const effLine = state.lineMbl * 1000 * LINE_EFFICIENCY;
   const series = [
     { id: 'chain', name: 'Chain (bow)', cls: 's-chain', values: points.map((p) => p.chain), limit: () => state.chainMbl * 1000 },
     ...points[0].lines.map((_, i) => ({
@@ -482,7 +488,7 @@ function renderWindageItems(): void {
 /** Anchor → quay limits: from the anchor under the bow out to line + boat + chain pulled straight. */
 function anchorRange(): [number, number] {
   const max = maxAnchorDistance(toScenario(state));
-  return [Math.floor(max - state.chainLength), Math.floor(max * 10) / 10];
+  return [Math.floor(max - state.chainLength), Math.floor(max)];
 }
 const snapTolerance = (): number => {
   const [lo, hi] = anchorRange();
@@ -552,7 +558,7 @@ function paintSliders(): void {
       const p = trackPos(snapD, lo, hi);
       anchor.style.setProperty('--track', `linear-gradient(to right, var(--track-bg) 0 calc(${p} - 1.5px), var(--ink) calc(${p} - 1.5px) calc(${p} + 1.5px), var(--track-bg) calc(${p} + 1.5px) 100%)`);
       anchor.style.setProperty('--thumb', Math.abs(state.anchorDistance - snapD) < 0.05 ? 'var(--ink)' : 'var(--accent)');
-      $('#snap-hint').innerHTML = `Snaps to <strong>${snapD.toFixed(1)} m</strong> = ${state.pretensionTarget} kN pretension at rest. Max ${hi.toFixed(1)} m (all pulled straight).`;
+      $('#snap-hint').innerHTML = `Snaps to <strong>${snapD} m</strong>: ${(snapH / 1000).toFixed(2)} kN pretension at rest (exactly ${state.pretensionTarget} kN at ${snapExact?.toFixed(1)} m). Max ${hi} m (all pulled straight).`;
     } else {
       anchor.style.removeProperty('--track');
       $('#snap-hint').textContent = `Target pretension not reachable. Max ${hi.toFixed(1)} m.`;
@@ -612,7 +618,8 @@ document.addEventListener('click', (ev) => {
   if (t.closest('#btn-pretension')) {
     try {
       const len = lineLengthForPretension(toScenario(state), state.pretensionTarget * 1000);
-      update({ lineLength: round(len, 3) });
+      // Kept to the centimetre: on a short line, 1 m changes the pretension by several kN.
+      update({ lineLength: round(len, 2) });
       toast(`Stern line length set to ${len.toFixed(2)} m`);
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e));
@@ -685,7 +692,7 @@ plan.addEventListener('pointermove', (ev) => {
   if (dragging !== 'anchor') return;
   const [x, y] = toUser(plan, ev);
   const [minD, maxD] = anchorRange();
-  update({ anchorDistance: Math.min(maxD, Math.max(minD, round(x * 2, 0) / 2)), anchorOffset: round(-y * 2, 0) / 2 });
+  update({ anchorDistance: Math.min(maxD, Math.max(minD, Math.round(x))), anchorOffset: round(-y * 2, 0) / 2 });
 });
 const endDrag = (): void => {
   if (!dragging) return;
@@ -703,7 +710,7 @@ plan.addEventListener('keydown', (ev) => {
   const d = map[ev.key];
   if (!d) return;
   ev.preventDefault();
-  update({ anchorDistance: state.anchorDistance + d[0], anchorOffset: state.anchorOffset + d[1] });
+  update({ anchorDistance: Math.round(state.anchorDistance + d[0] * 2), anchorOffset: state.anchorOffset + d[1] });
 });
 
 side.addEventListener('pointerdown', (ev) => {

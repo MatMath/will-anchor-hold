@@ -1,4 +1,4 @@
-import type { CaseResult, Equilibrium, ScenarioResult } from '../physics';
+import { LINE_EFFICIENCY, type CaseResult, type Equilibrium, type ScenarioResult } from '../physics';
 import { badge, deg, force, m, pct, type Units } from './format';
 import type { AppState } from './state';
 
@@ -52,7 +52,7 @@ export function resultsTable(s: AppState, r: ScenarioResult): string {
     });
   }
 
-  const effMbl = s.lineMbl * 1000 * (s.lineEfficiency / 100);
+  const effMbl = s.lineMbl * 1000 * LINE_EFFICIENCY;
   const lineName = (i: number): string => (s.lineCount === 1 ? 'Stern line' : i === 0 ? 'Port line' : 'Starboard line');
   const lineRows: Row[] = [];
   R.lines.forEach((l, i) => {

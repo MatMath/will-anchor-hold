@@ -5,6 +5,7 @@ import { spanForTension } from './catenary';
 import { brent } from './numeric';
 import { ropeStrain, type RopeType } from './rope';
 import type { Windage } from './wind';
+import type { BoatType } from './windage';
 import {
   initialPose,
   snatchLoad,
@@ -71,6 +72,12 @@ export interface ScenarioInput {
   /** Boat speed used for the indicative snatch-load estimate, m/s. */
   snatchSpeed: number;
 }
+
+/** Knot / splice / chafe allowance applied to every stern line: 85% of the catalogue MBL. */
+export const LINE_EFFICIENCY = 0.85;
+
+/** Stern cleats are taken 80% of the beam apart on a monohull and the full beam apart on a multihull. */
+export const sternCleatSpacing = (type: BoatType, beam: number): number => (type === 'catamaran' ? 1 : 0.8) * beam;
 
 export type Status = 'green' | 'amber' | 'red';
 

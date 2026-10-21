@@ -1,11 +1,13 @@
 import {
   HOLDING_RATIO,
+  LINE_EFFICIENCY,
   WORKED_EXAMPLE,
   chainEA,
   chainMbl,
   chainWeightPerMetre,
   estimateWindageItems,
   ropeMbl,
+  sternCleatSpacing,
   sumWindage,
   type AnchorType,
   type Bottom,
@@ -70,10 +72,8 @@ export interface AppState {
   lineD: number;
   lineMblAuto: boolean;
   lineMbl: number;
-  lineEfficiency: number;
   lineLength: number;
   pretensionTarget: number;
-  cleatSpacing: number;
   cleatInset: number;
   cleatHeight: number;
   shoreSpread: number;
@@ -101,8 +101,8 @@ export function boatDefaults(type: BoatType, loa: number): Partial<AppState> {
   const k = loa / 12.8;
   const r1 = (v: number): number => Math.round(v * 10) / 10;
   return type === 'monohull'
-    ? { beam: r1(4.2 * k), freeboard: r1(1.4 * k), displacement: Math.round(10500 * k ** 3 / 100) * 100, mastHeight: r1(18 * k), rollerHeight: r1(1.3 * k), rollerOverhang: 0.3, cleatSpacing: r1(3.4 * k), cleatHeight: r1(1.2 * k) }
-    : { beam: r1(7.0 * k), freeboard: r1(1.4 * k), displacement: Math.round(11000 * k ** 3 / 100) * 100, mastHeight: r1(19 * k), rollerHeight: r1(1.0 * k), rollerOverhang: 0, cleatSpacing: r1(6.2 * k), cleatHeight: r1(1.1 * k) };
+    ? { beam: r1(4.2 * k), freeboard: r1(1.4 * k), displacement: Math.round(10500 * k ** 3 / 100) * 100, mastHeight: r1(18 * k), rollerHeight: r1(1.3 * k), rollerOverhang: 0.3, cleatHeight: r1(1.2 * k) }
+    : { beam: r1(7.0 * k), freeboard: r1(1.4 * k), displacement: Math.round(11000 * k ** 3 / 100) * 100, mastHeight: r1(19 * k), rollerHeight: r1(1.0 * k), rollerOverhang: 0, cleatHeight: r1(1.1 * k) };
 }
 
 const ex = WORKED_EXAMPLE;
@@ -159,10 +159,8 @@ export const DEFAULT_STATE: AppState = {
   lineD: 14,
   lineMblAuto: true,
   lineMbl: 40.2,
-  lineEfficiency: 85,
   lineLength: ex.lines.length,
   pretensionTarget: 1.0,
-  cleatSpacing: 3.4,
   cleatInset: 0.3,
   cleatHeight: 1.2,
   shoreSpread: 4,
@@ -197,7 +195,7 @@ export function resolve(s: AppState): AppState {
   if (out.holdingAuto) out.holdingRatio = HOLDING_RATIO[out.anchorType][out.bottom];
   // The anchor can be no further out than stern line + boat + chain pulled straight.
   const maxD = out.lineLength + out.loa + out.rollerOverhang + out.chainLength;
-  if (out.anchorDistance > maxD) out.anchorDistance = round(Math.floor(maxD * 10) / 10, 1);
+  if (out.anchorDistance > maxD) out.anchorDistance = Math.floor(maxD);
   return out;
 }
 
@@ -222,9 +220,9 @@ export function toScenario(s: AppState): ScenarioInput {
       count: s.lineCount,
       rope: s.lineType,
       mbl: s.lineMbl * 1000,
-      efficiency: s.lineEfficiency / 100,
+      efficiency: LINE_EFFICIENCY,
       length: s.lineLength,
-      cleatSpacing: s.cleatSpacing,
+      cleatSpacing: sternCleatSpacing(s.boatType, s.beam),
       cleatInset: s.cleatInset,
       cleatHeight: s.cleatHeight,
       shoreSpread: s.shoreSpread,
