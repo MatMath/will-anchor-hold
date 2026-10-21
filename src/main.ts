@@ -9,7 +9,6 @@ import {
   estimateWindageItems,
   knotsToMs,
   anchorDistanceForPretension,
-  lineLengthForPretension,
   liftOffWind,
   maxAnchorDistance,
   buildModel,
@@ -85,10 +84,6 @@ app.innerHTML = `
         ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 1, slider: [20, 120], id: 'play-anchor', hint: '<span id="snap-hint"></span>' })}
         ${num('lineLength', 'Stern line length', 'm', { min: 1, max: 80, step: 1, slider: [1, 80] })}
         ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1, slider: [1, 25] })}
-      </div>
-      <div class="pretension">
-        ${num('pretensionTarget', 'Target chain pretension at rest', 'kN', { min: 0.05, max: 10, step: 0.1 })}
-        <button type="button" class="btn" id="btn-pretension">Set line length for this pretension</button>
       </div>
     </div>
 
@@ -258,7 +253,9 @@ let error: string | null = null;
 let points: SweepPoint[] = [];
 /** Mean wind (kn) at which the whole chain lifts off the seabed; null = never (up to 100 kn). */
 let liftKn: number | null = null;
-/** Anchor → quay distance giving the target pretension at rest (slider snap point). */
+/** Chain pretension at rest that defines the anchor slider's balanced snap point, N. */
+const SNAP_PRETENSION = 1000;
+/** Anchor → quay distance giving SNAP_PRETENSION at rest (slider snap point). */
 let snapD: number | null = null;
 /** Exact balanced distance and the rest pretension at the whole-metre snap point. */
 let snapExact: number | null = null;
@@ -349,7 +346,7 @@ function computeDerived(): void {
     liftKn = null;
   }
   try {
-    const d = anchorDistanceForPretension(inp, state.pretensionTarget * 1000);
+    const d = anchorDistanceForPretension(inp, SNAP_PRETENSION);
     snapExact = d;
     snapD = d === null ? null : Math.round(d);
     snapH = snapD === null ? 0 : solveRest(buildModel({ ...inp, anchor: { ...inp.anchor, distance: snapD } })).rode.h;
@@ -558,10 +555,10 @@ function paintSliders(): void {
       const p = trackPos(snapD, lo, hi);
       anchor.style.setProperty('--track', `linear-gradient(to right, var(--track-bg) 0 calc(${p} - 1.5px), var(--ink) calc(${p} - 1.5px) calc(${p} + 1.5px), var(--track-bg) calc(${p} + 1.5px) 100%)`);
       anchor.style.setProperty('--thumb', Math.abs(state.anchorDistance - snapD) < 0.05 ? 'var(--ink)' : 'var(--accent)');
-      $('#snap-hint').innerHTML = `Snaps to <strong>${snapD} m</strong>: ${(snapH / 1000).toFixed(2)} kN pretension at rest (exactly ${state.pretensionTarget} kN at ${snapExact?.toFixed(1)} m). Max ${hi} m (all pulled straight).`;
+      $('#snap-hint').innerHTML = `Snaps to <strong>${snapD} m</strong>: ${(snapH / 1000).toFixed(2)} kN pretension at rest (exactly ${SNAP_PRETENSION / 1000} kN at ${snapExact?.toFixed(1)} m). Max ${hi} m (all pulled straight).`;
     } else {
       anchor.style.removeProperty('--track');
-      $('#snap-hint').textContent = `Target pretension not reachable. Max ${hi.toFixed(1)} m.`;
+      $('#snap-hint').textContent = `No balanced point inside the range. Max ${hi} m.`;
     }
   }
 }
@@ -587,7 +584,7 @@ document.addEventListener('input', (ev) => {
   if (!key) return;
   let v = readControl(el);
   if (v === undefined) return;
-  // The anchor slider snaps to the balanced (target-pretension) distance when close to it.
+  // The anchor slider snaps to the balanced (1 kN pretension) distance when close to it.
   if (key === 'anchorDistance' && el.type === 'range' && snapD !== null && Math.abs((v as number) - snapD) <= snapTolerance()) v = snapD;
   const patch: Partial<AppState> = { [key]: v } as Partial<AppState>;
   const autoKey = AUTO_OF[key];
@@ -615,16 +612,7 @@ document.addEventListener('click', (ev) => {
     update({ [k]: !state[k] } as Partial<AppState>);
     return;
   }
-  if (t.closest('#btn-pretension')) {
-    try {
-      const len = lineLengthForPretension(toScenario(state), state.pretensionTarget * 1000);
-      // Kept to the centimetre: on a short line, 1 m changes the pretension by several kN.
-      update({ lineLength: round(len, 2) });
-      toast(`Stern line length set to ${len.toFixed(2)} m`);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : String(e));
-    }
-  } else if (t.closest('#btn-example')) {
+  if (t.closest('#btn-example')) {
     state = workedExampleState(state);
     saveState(state);
     schedule();

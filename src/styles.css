@@ -545,16 +545,6 @@ details.sub > summary {
   padding-top: 12px;
   border-top: 1px solid var(--hairline);
 }
-.pretension {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  align-items: end;
-  margin-top: 10px;
-}
-.pretension .field {
-  width: 200px;
-}
 @media (max-width: 480px) {
   .play-grid {
     grid-template-columns: 1fr;

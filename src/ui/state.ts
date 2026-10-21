@@ -73,7 +73,6 @@ export interface AppState {
   lineMblAuto: boolean;
   lineMbl: number;
   lineLength: number;
-  pretensionTarget: number;
   cleatInset: number;
   cleatHeight: number;
   shoreSpread: number;
@@ -160,7 +159,6 @@ export const DEFAULT_STATE: AppState = {
   lineMblAuto: true,
   lineMbl: 40.2,
   lineLength: ex.lines.length,
-  pretensionTarget: 1.0,
   cleatInset: 0.3,
   cleatHeight: 1.2,
   shoreSpread: 4,
