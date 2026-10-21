@@ -85,13 +85,19 @@ describe('windage helper', () => {
 
 describe('chain', () => {
   it('MBL from grade stress over both link legs', () => {
-    expect(chainMbl('G30', 8)).toBeCloseTo(32170, -1); // ≈ 32 kN, DIN 766 catalogue 3200 kgf
-    expect(chainMbl('G30', 10)).toBeCloseTo(50265, -1);
-    expect(chainMbl('G70', 10) / chainMbl('G30', 10)).toBeCloseTo(700 / 320, 9);
+    // Grade 30 = published DIN 766 table (Certex): 8 mm 31.38 kN, 10 mm 49 kN, 12 mm 68.64 kN.
+    expect(chainMbl('G30', 8)).toBeCloseTo(31380, 6);
+    expect(chainMbl('G30', 10)).toBeCloseTo(49000, 6);
+    expect(chainMbl('G30', 12)).toBeCloseTo(68640, 6);
+    // Not in the table: scaled by d² from the nearest size (13 mm from 12 mm).
+    expect(chainMbl('G30', 13)).toBeCloseTo(68640 * (13 / 12) ** 2, 6);
+    // Other grades: grade stress × 2 legs × πd²/4.
+    expect(chainMbl('G70', 10)).toBeCloseTo(700 * 2 * Math.PI * 25, 6);
   });
 
   it('weights from table, scaled by d² otherwise', () => {
     expect(chainWeightPerMetre(10)).toBe(2.25);
+    expect(chainWeightPerMetre(12)).toBe(3.1);
     expect(chainWeightPerMetre(11)).toBeCloseTo(2.25 * 1.21, 9);
   });
 
@@ -135,9 +141,15 @@ describe('anchor holding', () => {
 
   it('drops with uplift angle', () => {
     expect(upliftFactor(0)).toBe(1);
-    expect(upliftFactor(5)).toBeCloseTo(0.75, 9);
-    expect(upliftFactor(10)).toBeCloseTo(0.5, 9);
-    expect(upliftFactor(7.5)).toBeCloseTo(0.625, 9);
-    expect(upliftFactor(80)).toBeGreaterThanOrEqual(0.05);
+    expect(upliftFactor(3)).toBe(1); // no loss up to 3° (US Navy)
+    expect(upliftFactor(5)).toBeCloseTo(0.937, 9);
+    expect(upliftFactor(10)).toBeCloseTo(0.7795, 9);
+    expect(upliftFactor(20)).toBeCloseTo(0.4645, 9);
+    expect(upliftFactor(80)).toBe(0.1); // floor
+  });
+
+  it('reproduces the yacht scope tests: 5:1 holds ~80% of 10:1 with a straight rode', () => {
+    const angle = (scope: number): number => (Math.asin(1 / scope) * 180) / Math.PI;
+    expect(upliftFactor(angle(5)) / upliftFactor(angle(10))).toBeCloseTo(0.8, 2);
   });
 });

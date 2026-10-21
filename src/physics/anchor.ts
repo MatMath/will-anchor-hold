@@ -1,5 +1,4 @@
 import { G } from './constants';
-import { interp } from './numeric';
 
 /**
  * Very rough anchor holding estimate: holding = ratio × anchor weight, reduced when the chain lifts
@@ -35,20 +34,16 @@ export const HOLDING_RATIO: Record<AnchorType, Record<Bottom, number>> = {
 
 /**
  * Fraction of holding left when the chain pulls up at the anchor shackle (angle above the seabed).
- * Drag-embedment anchors lose holding fast: roughly −25% at 5°, −50% at 10°, −70% at 15°.
+ * No loss up to 3° (US Navy mooring manual, via OTC 7491), then a straight line fitted to the yacht
+ * scope tests ("at 5:1 about 80% … compared to 10:1", Sailing Foundation 1995, i.e. ~11.5° vs ~5.7°):
+ * about −3.15% per degree, floored at 10%. API RP 2SK (offshore anchors) is milder; yacht anchors bury
+ * less deeply, so this sits between. See docs/validation.md.
  */
-const UPLIFT_CURVE: ReadonlyArray<readonly [number, number]> = [
-  [0, 1],
-  [5, 0.75],
-  [10, 0.5],
-  [15, 0.3],
-  [20, 0.2],
-  [30, 0.1],
-  [90, 0.05],
-];
+export const UPLIFT_NO_LOSS_DEG = 3;
+export const UPLIFT_LOSS_PER_DEG = 0.0315;
 
 export const upliftFactor = (angleDeg: number): number =>
-  angleDeg <= 0 ? 1 : Math.max(0.05, interp(UPLIFT_CURVE, Math.min(angleDeg, 90)));
+  angleDeg <= UPLIFT_NO_LOSS_DEG ? 1 : Math.max(0.1, 1 - UPLIFT_LOSS_PER_DEG * (angleDeg - UPLIFT_NO_LOSS_DEG));
 
 /** Estimated holding, N. */
 export const anchorHolding = (massKg: number, ratio: number, upliftDeg: number): number =>

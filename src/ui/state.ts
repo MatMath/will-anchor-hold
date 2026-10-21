@@ -135,7 +135,7 @@ export const DEFAULT_STATE: AppState = {
   chainKgAuto: true,
   chainKgPerM: 2.25,
   chainMblAuto: true,
-  chainMbl: 50.3,
+  chainMbl: 49,
   chainLength: 40,
 
   snubberOn: false,

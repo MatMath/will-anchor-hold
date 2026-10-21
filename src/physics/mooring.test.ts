@@ -137,6 +137,9 @@ describe('scenario + sweep', () => {
     expect(s.chain.tension / 1000).toBeCloseTo(7.5, 0);
     expect(s.drift.dy).toBeCloseTo(3.4, 0);
     expect(s.anchor.pull).toBe('upward');
+    expect(s.chain.mbl).toBe(49000); // DIN 766 table, 10 mm
+    expect(s.anchor.upliftFactor).toBeCloseTo(1 - 0.0315 * (s.anchor.upliftDeg - 3), 9);
+    expect(s.anchor.ratio).toBeCloseTo(1.1, 1);
   });
 });
 

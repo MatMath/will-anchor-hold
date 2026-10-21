@@ -44,7 +44,7 @@ CdA(94.4°) = 30 × 0.99705 + 9.6 × 0.07672 = 29.912 + 0.737 = **30.65 m²** �
 | | Formula | Value |
 |---|---|---|
 | Submerged weight w | 2.25 kg/m × 9.807 × (1 − 1025/7850) | **19.18 N/m** |
-| MBL | 320 N/mm² × 2 legs × π·10²/4 | **50.3 kN** |
+| MBL | published DIN 766 table (Grade 3) | **49.0 kN** |
 | Axial stiffness EA | 85.4 · d² kN (DNV, studless) | 8.54 MN (barely matters here) |
 
 Height from seabed to roller: Z = 6.0 + 1.3 = **7.3 m**.
@@ -114,14 +114,14 @@ grow until the two ends' sideways components carry the load.
 **Drift.** Midships moves 3.42 m to port, the bow 3.93 m and the stern 2.95 m. The boat turns 4.4° and moves
 0.39 m towards the quay.
 
-**Anchor.** Holding when pulled flat ≈ 20 kg × 40 = 800 kgf = 7.85 kN. With a 7.6° uplift the holding drops to
-62% → **4.87 kN**. The load at the anchor is 7.35 kN = **151% of the estimated holding → red: the anchor is
-likely to drag**. The fix: more chain, which lowers the uplift, or a heavier/better anchor.
+**Anchor.** Holding when pulled flat ≈ 20 kg × 40 = 800 kgf = 7.85 kN. With a 7.6° uplift the holding drops:
+no loss up to 3°, then 3.15% per degree, so 1 − 0.0315 × (7.58 − 3) = 0.856 → **6.71 kN**. The load at the
+anchor is 7.35 kN = **110% of the estimated holding → red: the anchor is likely to drag**. The fix: more chain, which lowers the uplift, or a heavier/better anchor.
 
 ## 6. Gust (42 kn)
 
-Wind 8.83 kN (including the 6.2° yaw); chain 13.3 kN; starboard line 11.8 kN (34% of effective MBL → amber);
-side shift 4.0 m.
+Wind 8.83 kN (including the 6.2° yaw); chain 13.3 kN (27% of MBL); starboard line 11.8 kN (34% of effective MBL → amber);
+side shift 4.0 m. Uplift at the anchor 8.9° → holding × 0.815 = 6.40 kN against 13.1 kN at the anchor (206%, red).
 
 ## 7. Snatch load (indicative)
 

@@ -165,10 +165,10 @@ app.innerHTML = `
       <summary><h2>Anchor &amp; chain</h2></summary>
       <div class="grid2">
         ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1 })}
-        ${select('chainD', 'Chain diameter', diaOpts([6, 8, 10, 12, 13, 14]))}
+        ${select('chainD', 'Chain diameter', diaOpts([6, 7, 8, 10, 12, 13, 14, 16]))}
         ${select('chainGrade', 'Chain grade (galvanised)', Object.entries(CHAIN_GRADES).map(([k, v]) => [k, v.name] as const))}
         ${num('chainKgPerM', 'Chain weight in air', 'kg/m', { min: 0.2, max: 10, step: 0.05, auto: 'chainKgAuto' })}
-        ${num('chainMbl', 'Chain MBL', 'kN', { min: 1, max: 500, step: 0.1, auto: 'chainMblAuto', hint: 'Auto: grade stress × 2 legs × πd²/4.' })}
+        ${num('chainMbl', 'Chain MBL', 'kN', { min: 1, max: 500, step: 0.1, auto: 'chainMblAuto', hint: 'Auto: published DIN 766 table for Grade 30; grade stress × 2 legs × πd²/4 for G40 / G70.' })}
         ${num('chainLength', 'Chain deployed', 'm', { min: 5, max: 150, step: 1 })}
         ${num('anchorDistance', 'Anchor → quay, horizontal', 'm', { min: 10, max: 200, step: 1 })}
         ${num('anchorOffset', 'Anchor offset sideways', 'm (+ port)', { min: -50, max: 50, step: 0.5 })}
@@ -234,7 +234,8 @@ app.innerHTML = `
     <li><strong>No current</strong> and no hull resistance: in steady state only the chain and the lines hold the boat.</li>
     <li><strong>Chain</strong>: elastic catenary (Irvine) on a flat, frictionless seabed, submerged weight throughout (the bit above water is slightly heavier). The anchor is a fixed point.</li>
     <li><strong>Stern lines</strong>: straight (no sag), with the typical load–stretch curve of the chosen rope. Real ropes differ ±20% from catalogue values; wet nylon is weaker and stretchier.</li>
-    <li><strong>Anchor holding</strong> is an order-of-magnitude guide only. Thresholds: amber above 50%, red above 80% of the estimate.</li>
+    <li><strong>Anchor holding</strong> is an order-of-magnitude guide only. When the chain lifts the shank, holding is reduced: no loss up to 3°, then about 3% less per degree (fitted to yacht scope tests; see the validation notes). Thresholds: amber above 50%, red above 80% of the estimate.</li>
+    <li><strong>Chain data</strong>: Grade 30 weights and breaking loads from the published DIN 766 table. The catenary was checked against NREL's MoorPy solver and an independent numerical integration.</li>
     <li><strong>Safety colours</strong> for chain, snubber and lines: amber above 30% MBL, red above 50% MBL. MBL is a breaking load, not a working load.</li>
   </ul>
   <details class="sub">

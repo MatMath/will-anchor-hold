@@ -34,8 +34,9 @@ For development: `npm run dev` (live reload), `npm test` (unit tests).
 | `src/physics/chain.ts`, `rope.ts`, `anchor.ts` | Chain grades/weights/MBL, rope MBL and load–stretch curves, holding estimates |
 | `src/physics/mooring.ts` | 3-DOF quasi-static equilibrium solver (damped Newton + drift fallback) |
 | `src/physics/scenario.ts` | Builds the model from inputs; rest / sustained / gust cases, sweep, pretension helper |
-| `src/physics/*.test.ts` | Unit tests (closed-form catenary checks, force/moment balance, symmetry, worked example) |
+| `src/physics/*.test.ts` | Unit tests (closed-form and ODE catenary checks, force/moment balance, symmetry, worked example) |
 | `docs/worked-example.md` | A complete case to check by hand. Also shown in the app. |
+| `docs/validation.md` | Catenary checked against NREL MoorPy and numerical integration; chain data and uplift curve sources |
 | `src/ui/` | Plan view, side view, sweep chart, results table, inputs |
 
 ## Model and limits
