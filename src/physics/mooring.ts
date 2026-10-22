@@ -2,6 +2,7 @@ import { brent, norm, solveLinear } from './numeric';
 import { slackSpan, solveRode, spanForTension, type Rode, type RodeState } from './catenary';
 import { ropeTension, type RopeType } from './rope';
 import { windDirectionVector, windLoad, type Windage, type WindLoad } from './wind';
+import { driftForce, type HullWater, type WaveSpec } from './waves';
 
 /**
  * Quasi-static, planar (3 degrees of freedom) equilibrium of a Med-moored boat.
@@ -14,7 +15,8 @@ import { windDirectionVector, windLoad, type Windage, type WindLoad } from './wi
  *  - wind, at the centre of effort (u = ceX), magnitude ½ρ·CdA(apparent angle)·V², along the wind;
  *  - chain, at the bow roller, horizontal tension H from the catenary, towards the anchor;
  *  - stern lines, at their cleats, horizontal component of the elastic line tension, towards the shore point.
- * No current, so the water exerts no steady force. Moments are taken about midships.
+ *  - with waves on, the mean wave drift force at midships, along the wind (waves come from the wind).
+ * No current, so otherwise the water exerts no steady force. Moments are taken about midships.
  */
 
 export type Vec2 = [number, number];
@@ -46,8 +48,10 @@ export interface MooringModel {
   /** Anchor position, earth frame, m. */
   anchor: Vec2;
   lines: SternLine[];
-  /** Displacement, kg (only used for the indicative snatch-load estimate). */
+  /** Displacement, kg (snatch, wave and fishtail dynamics). */
   displacement: number;
+  /** Waves from the wind direction, or null when off. Only act when there is wind. */
+  waves?: { spec: WaveSpec; hull: HullWater; depth: number } | null;
 }
 
 export interface Pose {
@@ -77,12 +81,15 @@ export interface Equilibrium {
   windSpeed: number;
   windFromDeg: number;
   wind: WindLoad & { vector: Vec2; point: Vec2 };
+  /** Mean wave drift force, N (0 without waves), and its vector. */
+  waveDrift: number;
+  waveDriftVector: Vec2;
   bow: Vec2;
   rode: RodeState;
   /** Horizontal chain force on the boat, N. */
   chainForce: Vec2;
   lines: LineResult[];
-  /** Fraction of the wind force carried by the chain / by the stern lines (projected on the wind direction). */
+  /** Fraction of the wind (+ wave drift) force carried by the chain / by the stern lines (projected on the wind direction). */
   shareChain: number;
   shareLines: number;
 }
@@ -112,7 +119,8 @@ interface Evaluation {
   eq: Omit<Equilibrium, 'converged' | 'iterations' | 'residual' | 'shareChain' | 'shareLines'>;
 }
 
-function evaluate(m: MooringModel, pose: Pose, windSpeed: number, windFromDeg: number): Evaluation {
+/** dzBow raises the bow roller (wave heave/pitch), changing the rode's vertical span. */
+function evaluate(m: MooringModel, pose: Pose, windSpeed: number, windFromDeg: number, dzBow = 0): Evaluation {
   const P: Vec2 = [pose.x, pose.y];
   let fx = 0;
   let fy = 0;
@@ -130,11 +138,17 @@ function evaluate(m: MooringModel, pose: Pose, windSpeed: number, windFromDeg: n
   const ce = toEarth(pose, [m.ceX, 0]);
   apply(ce, windVec);
 
+  // Mean wave drift, at midships
+  const beta = (apparentAngle(windFromDeg, pose.psi) * Math.PI) / 180;
+  const waveDrift = m.waves && windSpeed > 0 ? driftForce(m.waves.spec, m.waves.hull, m.waves.depth, beta) : 0;
+  const waveDriftVector = scale(dir, waveDrift);
+  if (waveDrift > 0) apply(P, waveDriftVector);
+
   // Chain
   const bow = toEarth(pose, [m.bowX, 0]);
   const toAnchor = sub(m.anchor, bow);
   const dist = len(toAnchor);
-  const rode = solveRode(m.rode, dist);
+  const rode = solveRode(dzBow ? { ...m.rode, z: m.rode.z + dzBow } : m.rode, dist);
   const chainForce = dist > 0 ? scale(toAnchor, rode.h / dist) : ([0, 0] as Vec2);
   apply(bow, chainForce);
 
@@ -159,6 +173,8 @@ function evaluate(m: MooringModel, pose: Pose, windSpeed: number, windFromDeg: n
       windSpeed,
       windFromDeg,
       wind: { ...wl, vector: windVec, point: ce },
+      waveDrift,
+      waveDriftVector,
       bow,
       rode,
       chainForce,
@@ -170,6 +186,14 @@ function evaluate(m: MooringModel, pose: Pose, windSpeed: number, windFromDeg: n
 export interface SolveOptions {
   initial?: Pose;
   maxIter?: number;
+  /** Hold the heading at this value (rad) and solve for position only — e.g. a fishtailing boat at the end of its swing. */
+  fixedPsi?: number;
+}
+
+/** Mooring forces with the boat placed at `pose` and the bow raised by dzBow, without re-solving equilibrium. */
+export function mooringAt(m: MooringModel, pose: Pose, dzBow = 0): { rode: RodeState; lines: LineResult[]; bow: Vec2; chainForce: Vec2 } {
+  const ev = evaluate(m, pose, 0, 0, dzBow).eq;
+  return { rode: ev.rode, lines: ev.lines, bow: ev.bow, chainForce: ev.chainForce };
 }
 
 /**
@@ -198,14 +222,17 @@ export function solveEquilibrium(
   opts: SolveOptions = {},
 ): Equilibrium {
   const L = Math.max(1, m.loa / 2); // length scale for rotation and moments
-  const toPose = (q: number[]): Pose => ({ x: q[0], y: q[1], psi: q[2] / L });
+  const fixed = opts.fixedPsi;
+  const n = fixed === undefined ? 3 : 2;
+  const toPose = (q: number[]): Pose => ({ x: q[0], y: q[1], psi: fixed ?? q[2] / L });
   const resid = (q: number[]): number[] => {
     const f = evaluate(m, toPose(q), windSpeed, windFromDeg).f;
-    return [f[0], f[1], f[2] / L];
+    return n === 3 ? [f[0], f[1], f[2] / L] : [f[0], f[1]];
   };
-  // Swinging at anchor (no stern lines): start head to wind, where the boat must end up.
-  const p0 = m.lines.length === 0 && windSpeed > 0 ? swingingPose(m, windSpeed, windFromDeg) : (opts.initial ?? initialPose(m));
-  let q = [p0.x, p0.y, p0.psi * L];
+  // Swinging at anchor (no stern lines): start head to wind (or at the held heading), downwind of the anchor.
+  let p0 = m.lines.length === 0 && windSpeed > 0 ? swingingPose(m, windSpeed, windFromDeg, fixed) : (opts.initial ?? initialPose(m));
+  if (fixed !== undefined && m.lines.length > 0) p0 = { ...p0, psi: fixed };
+  let q = n === 3 ? [p0.x, p0.y, p0.psi * L] : [p0.x, p0.y];
   let r = resid(q);
   let rn = norm(r);
   const fRef = Math.max(1, windLoad(m.windage, windSpeed, 90).force);
@@ -216,13 +243,13 @@ export function solveEquilibrium(
 
   for (; it < maxIter && rn > tol; it++) {
     // Newton step
-    const J: number[][] = [[], [], []];
-    for (let j = 0; j < 3; j++) {
+    const J: number[][] = Array.from({ length: n }, () => []);
+    for (let j = 0; j < n; j++) {
       const h = 1e-6 * Math.max(1, Math.abs(q[j]));
       const qj = [...q];
       qj[j] += h;
       const rj = resid(qj);
-      for (let i = 0; i < 3; i++) J[i][j] = (rj[i] - r[i]) / h;
+      for (let i = 0; i < n; i++) J[i][j] = (rj[i] - r[i]) / h;
     }
     let dq = solveLinear(J, r.map((v) => -v));
     let accepted = false;
@@ -248,7 +275,7 @@ export function solveEquilibrium(
     const d = r.map((v) => v / rn);
     const along = (s: number): number => {
       const rs = resid(q.map((v, i) => v + s * d[i]));
-      return rs[0] * d[0] + rs[1] * d[1] + rs[2] * d[2];
+      return rs.reduce((acc, v, i) => acc + v * d[i], 0);
     };
     const s = driftStep(along, 4 * m.loa + 400);
     if (s < 1e-9) break;
@@ -258,7 +285,7 @@ export function solveEquilibrium(
   }
 
   const ev = evaluate(m, toPose(q), windSpeed, windFromDeg);
-  const wf = ev.eq.wind.force;
+  const wf = ev.eq.wind.force + ev.eq.waveDrift;
   const dir = windDirectionVector(windFromDeg);
   const along = (f: Vec2): number => -(f[0] * dir[0] + f[1] * dir[1]);
   const lineSum = ev.eq.lines.reduce<Vec2>((acc, l) => add(acc, l.force), [0, 0]);
@@ -299,11 +326,11 @@ export function driftStep(f: (s: number) => number, sMax: number): number {
  * centre of effort, passes through the bow roller, i.e. bow pointing into the wind (apparent wind 0°),
  * and lies downwind of the anchor at the chain span for the head-on wind load.
  */
-export function swingingPose(m: MooringModel, windSpeed: number, windFromDeg: number): Pose {
+export function swingingPose(m: MooringModel, windSpeed: number, windFromDeg: number, heldPsi?: number): Pose {
   const deg = ((((-windFromDeg + 180) % 360) + 360) % 360) - 180; // bow turned to face the wind, in [-180, 180)
-  const psi = (deg * Math.PI) / 180;
+  const psi = heldPsi ?? (deg * Math.PI) / 180;
   const down = windDirectionVector(windFromDeg);
-  const h = windLoad(m.windage, windSpeed, 0).force;
+  const h = windLoad(m.windage, windSpeed, apparentAngle(windFromDeg, psi)).force;
   const span = spanForTension(m.rode, h);
   const bow: Vec2 = [m.anchor[0] + down[0] * span, m.anchor[1] + down[1] * span];
   const toBow = rot(psi, [m.bowX, 0]);
@@ -338,6 +365,12 @@ export function stiffnessAlong(m: MooringModel, eq: Equilibrium): number {
   return compliance > 0 ? 1 / compliance : 0;
 }
 
+/** Mass plus hydrodynamic added mass for motion along a direction at angle (deg) to the bow: ~10% fore-aft, ~100% sideways. */
+export function effectiveMass(displacement: number, angleDeg: number): number {
+  const a = (angleDeg * Math.PI) / 180;
+  return displacement * (1 + 0.1 + 0.9 * Math.sin(a) ** 2);
+}
+
 /**
  * Indicative snatch load: the extra force when the boat, moving at `speed` (m/s) along the wind
  * direction, is stopped by the mooring acting as a spring: ΔF = v·√(m_eff·k).
@@ -345,8 +378,6 @@ export function stiffnessAlong(m: MooringModel, eq: Equilibrium): number {
  */
 export function snatchLoad(m: MooringModel, eq: Equilibrium, speed: number): { k: number; mEff: number; force: number } {
   const k = stiffnessAlong(m, eq);
-  const a = (apparentAngle(eq.windFromDeg, eq.pose.psi) * Math.PI) / 180;
-  const addedMass = 0.1 + 0.9 * Math.sin(a) ** 2;
-  const mEff = m.displacement * (1 + addedMass);
+  const mEff = effectiveMass(m.displacement, apparentAngle(eq.windFromDeg, eq.pose.psi));
   return { k, mEff, force: speed * Math.sqrt(mEff * k) };
 }

@@ -8,3 +8,6 @@ export * from './catenary';
 export * from './mooring';
 export * from './scenario';
 export * from './example';
+export * from './waves';
+export * from './dynamics';
+export * from './animation';

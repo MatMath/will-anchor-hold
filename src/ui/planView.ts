@@ -18,6 +18,8 @@ export interface PlanInput {
   forceRef: number;
   label: string;
   frozen?: ViewBox;
+  /** Animated waves: crest lines across the wind, wavelength (m) and phase ωt (rad). */
+  waves?: { lambda: number; phase: number; amp: number; dir: [number, number] };
 }
 
 const S = (p: Vec2): [number, number] => [p[0], -p[1]];
@@ -151,6 +153,21 @@ export function renderPlan(svg: SVGSVGElement, p: PlanInput): ViewBox {
 
   // Water + quay
   out.push(`<rect class="p-water" x="${vb.x}" y="${vb.y}" width="${vb.w}" height="${vb.h}"/>`);
+  // Wave crests: lines across the wind, moving downwind; crest at the bow when the phase is a multiple of 2π.
+  if (p.waves && p.waves.lambda > 0) {
+    const { lambda, phase, dir } = p.waves;
+    const nrm: Vec2 = [-dir[1], dir[0]];
+    const ref = bow;
+    const span = Math.hypot(vb.w, vb.h);
+    const s0 = ((phase / (2 * Math.PI)) % 1) * lambda;
+    for (let s = s0 - Math.ceil(span / lambda) * lambda; s < span; s += lambda) {
+      const c: Vec2 = [ref[0] + dir[0] * s, ref[1] + dir[1] * s];
+      const a = S([c[0] - nrm[0] * span, c[1] - nrm[1] * span]);
+      const b = S([c[0] + nrm[0] * span, c[1] + nrm[1] * span]);
+      out.push(`<line class="p-crest" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" vector-effect="non-scaling-stroke"/>`);
+    }
+  }
+
   out.push(`<rect class="p-quay" x="${vb.x - 10}" y="${vb.y - 10}" width="${-vb.x + 10}" height="${vb.h + 20}"/>`);
   out.push(`<line class="p-quay-edge" x1="0" y1="${vb.y}" x2="0" y2="${vb.y + vb.h}" vector-effect="non-scaling-stroke"/>`);
   out.push(text(-6 * k, vb.y + vb.h - 8 * k, fs, 'Quay / rock', 'lbl lbl-muted lbl-vertical', 'start', ` transform="rotate(-90 ${-6 * k} ${vb.y + vb.h - 8 * k})"`));

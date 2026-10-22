@@ -15,6 +15,7 @@ uplift curve is the yacht-derived one in section 3.
 | DIN 766 chain MBL | Was 2.5–5.5% too high (unsafe side). **Fixed:** the app now uses the published table |
 | Anchor holding vs uplift angle | Was far harsher than any published source. **Fixed:** yacht-derived curve, see section 3 |
 | Yacht example (Peter Smith, 12 mm × 48 m in 8 m) | Qualitatively **consistent** |
+| Waves and fishtailing (section 5) | Fishtail ±60° = 3.0× (Practical Sailor 2–3×); snatch 3.7 kN at 5.5:1, 6.5 kN at 4:1 (measured 4.0 / 6.7 kN) |
 | Rocna KB "Scope vs catenary" depth chart, simulations and wind loads | **Reproduced**: 7.51:1 vs 7.5:1 at 7 ft; 16 m wind loads −6% beam-on (section 4) |
 
 ## 1. Catenary — two independent checks
@@ -156,6 +157,73 @@ off the wind, not lying head to wind (head-on the app gives about a third of tha
 
 Both the app and the article are static; neither includes snatch loads.
 
+
+## 5. Waves and fishtailing
+
+Both are optional (Waves & fishtailing section). They add loads on top of the static equilibrium; the
+status chips and the "Peak loads" rows then show the worst of static, fishtail and largest-wave loads.
+
+### Model
+
+| Piece | What the app does | Source / basis |
+|---|---|---|
+| Wave height and period | User sets Hs; period defaults to Tp = 3.6·√Hs (steep young wind sea, steepness ≈ 1/20) | Steep end of the DNV-RP-C205 Tp range 3.6–5·√Hs (as implemented in SINTEF SIMA) |
+| Largest wave | Peaks use H = 1.86·Hs, the largest of about 1 000 waves | Rayleigh wave-height distribution |
+| Mean wave drift force | F = ρ·g·Hs²·W·Kr²/16 along the wind, W = waterline length beam-on / beam head-on, Kr² = 1 − e^(−2kd) with d the canoe-body draft | Full reflection ½ρgA² per metre (WikiWaves, *Wave drift forces*); A² → Hs²/8 in irregular seas; deep-water power transmission past a barrier of draft d |
+| Bow motion | Rigid hull fitted to the wave over its length along the wave: heave a·sin u/u, pitch a·3(sin u − u cos u)/u², u = k·L/2 | Derived; → a for long waves, pure pitch (bow ±0.95a) when λ = L, → 0 for short waves |
+| Bow held down by the chain | Buoyancy stiffness at the bow ρ·g·A_wp/5 (heave ρgA and pitch ρgA/4 in series) against the chain's extra vertical pull | Derived from waterplane area |
+| Surge in waves | Time simulation (RK4, 24 wave periods): boat mass + added mass driven by the water, linear damping (ζ = 0.15) on its motion relative to the water, against the full non-linear mooring force | Captures the snatch when slack chain comes tight; a test checks it matches linear spring–mass theory for tiny waves |
+| Fishtailing | Swinging at anchor only: boat held at ±A° off head-to-wind and re-solved; the worse side is kept | Practical Sailor: the boat "sees" the wind in profile at the end of each swing |
+
+### Fishtailing vs Practical Sailor
+
+Practical Sailor (*Yawing and anchor holding*, load cell on the rode): 60° of yaw (±30°) raised rode
+tension 30–60%; 120° (±60°) by 100–200%; 140° at the bow up to 240%.
+
+| Swing | App (12.8 m monohull, 30 kn, chain tension ÷ head-to-wind) | Practical Sailor (trimaran test boat) |
+|---|---|---|
+| ±15° | 1.71 × | — |
+| ±30° | 2.30 × | 1.3–1.6 × |
+| ±60° | 3.02 × | 2–3 × |
+
+The app is in range at large yaw and **conservative at moderate yaw**: it holds the boat at the end of the
+swing in a steady wind, and a monohull's side area is a larger multiple of its frontal area than a
+trimaran's. The default swing is ±25°.
+
+### Snatch loads vs Practical Sailor measurements
+
+Practical Sailor (*Anchor testing and rode loads*): a 45 ft monohull on 5/16″ chain, no snubber, 30 kn:
+maximum snatch about 900 lb (4.0 kN); at shorter scope "severe", about 1 500 lb (6.7 kN); peaks fell with
+scope and had "almost disappeared" at 10:1. The peaks came from the boat veering about plus the waves.
+App, 12.8 m boat swinging at anchor, 30 kn, ±25° fishtail, small chop Hs 0.2 m, largest wave:
+
+| Scope | 4.1:1 | 5.5:1 | 7.5:1 | 10:1 |
+|---|---|---|---|---|
+| Chain peak | **6.5 kN** | **3.7 kN** | 3.5 kN | 3.5 kN (= fishtail alone: no snatch) |
+
+Both the magnitudes and the trend with scope match. These figures are regression tests in
+`src/physics/waves.test.ts`.
+
+In bigger waves loads rise steeply when the chain is close to straight: Med-moored beam-on in the worked
+example, Hs 0.5 m takes the chain peak from 8.9 to 29 kN. Alain Fraysse remarks that wave-induced loads
+"could easily be 10 times" the wind-induced ones; owners with load cells report all-chain shock loads
+"sometimes exceeding 10× the average". A nylon snubber cuts the app's wave peaks by more than half
+(tested).
+
+### Gust animation
+
+"Animate 10 gusts" runs 10 gusts of varied strength (the strongest reaches the full gust speed), fishtail
+swings with the set period, and wave groups whose largest wave (1.86·Hs) arrives with each gust peak.
+Each instant the boat is put in equilibrium for the wind and heading, and its wave surge is integrated as
+above. Tests check that without waves or fishtail it reproduces the static gust load to 1%, and that with
+both its peak is within the range of the analysed peak.
+
+### Limits
+
+Quasi-static fishtail (no yaw dynamics or momentum); one degree of freedom for wave surge; bow motion from
+a rigid hull fit (no pitch/heave resonance); no chain drag or seabed friction damping; anchor modelled as
+fixed (in reality it drags once the load exceeds its holding). Treat wave peaks as indicative.
+
 ## Sources
 
 - NREL MoorPy, `moorpy.Catenary.catenary` (Jonkman catenary with seabed contact): https://moorpy.readthedocs.io/
@@ -168,3 +236,9 @@ Both the app and the article are static; neither includes snatch loads.
 - The Sailing Foundation (1995), *Anchor Tests, Puget Sound* (D. Fryer): https://www.ussailing.org/wp-content/uploads/2018/04/anchor-study.pdf
 - Peter Smith, *Anchor rode catenary*: https://petersmith.net.nz/boat-anchors/catenary.php
 - Rocna Knowledge Base, *Scope vs catenary*: https://kb.rocna.com/kb/Scope_vs_catenary
+- WikiWaves, *Wave drift forces*: https://wikiwaves.org/Wave_Drift_Forces
+- SINTEF SIMA, wave modelling (DNV-RP-C205 Tp/√Hs range): https://sima.sintef.no/docs/5.0/simo/modelling/environment/waves.html
+- Practical Sailor, *Yawing and anchor holding*: https://www.practical-sailor.com/sails-rigging-deckgear/yawing-and-anchor-holding/
+- Practical Sailor, *The science of stern anchoring*: https://www.practical-sailor.com/sails-rigging-deckgear/the-science-of-stern-anchoring/
+- Practical Sailor, *Anchor testing and rode loads*: https://www.practical-sailor.com/sails-rigging-deckgear/anchor-testing-and-rode-loads/
+- Alain Fraysse, *Dynamic behaviour — yawing and swinging*: http://alain.fraysse.free.fr/sail/rode/dynam/yawswing.htm

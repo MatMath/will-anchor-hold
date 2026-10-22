@@ -5,6 +5,7 @@ import {
   chainEA,
   chainMbl,
   chainWeightPerMetre,
+  defaultWavePeriod,
   estimateWindageItems,
   ropeMbl,
   sternCleatSpacing,
@@ -82,6 +83,16 @@ export interface AppState {
 
   snatchSpeed: number;
 
+  /** Wind waves from the wind direction. */
+  wavesOn: boolean;
+  waveHs: number;
+  wavePeriodAuto: boolean;
+  wavePeriod: number;
+  /** Fishtailing at anchor (swinging, no stern lines). */
+  fishtailOn: boolean;
+  fishtailAmp: number;
+  fishtailPeriod: number;
+
   // View preferences
   units: 'kN' | 'kgf';
   viewCase: 'rest' | 'sustained' | 'gust';
@@ -90,6 +101,7 @@ export interface AppState {
   vExag: number;
   sweepMode: 'kN' | 'pct';
   sweepGust: boolean;
+  animSpeed: number;
 }
 
 export type Key = keyof AppState;
@@ -168,6 +180,14 @@ export const DEFAULT_STATE: AppState = {
 
   snatchSpeed: 0.5,
 
+  wavesOn: false,
+  waveHs: 0.5,
+  wavePeriodAuto: true,
+  wavePeriod: 2.5,
+  fishtailOn: true,
+  fishtailAmp: 25,
+  fishtailPeriod: 30,
+
   units: 'kN',
   viewCase: 'sustained',
   exaggeration: 1,
@@ -175,6 +195,7 @@ export const DEFAULT_STATE: AppState = {
   vExag: 2,
   sweepMode: 'kN',
   sweepGust: false,
+  animSpeed: 5,
 };
 
 /** Fill in every "auto" value from the tables. Pure. */
@@ -191,6 +212,7 @@ export function resolve(s: AppState): AppState {
   if (out.snubberMblAuto) out.snubberMbl = round(ropeMbl(out.snubberType, out.snubberD) / 1000, 1);
   if (out.lineMblAuto) out.lineMbl = round(ropeMbl(out.lineType, out.lineD) / 1000, 1);
   if (out.holdingAuto) out.holdingRatio = HOLDING_RATIO[out.anchorType][out.bottom];
+  if (out.wavePeriodAuto) out.wavePeriod = round(defaultWavePeriod(out.waveHs), 1);
   // The anchor can be no further out than stern line + boat + chain pulled straight.
   const maxD = out.lineLength + out.loa + out.rollerOverhang + out.chainLength;
   if (out.anchorDistance > maxD) out.anchorDistance = Math.floor(maxD);
@@ -201,7 +223,9 @@ export const round = (v: number, d: number): number => Math.round(v * 10 ** d) /
 
 export function toScenario(s: AppState): ScenarioInput {
   return {
+    boatType: s.boatType,
     loa: s.loa,
+    beam: s.beam,
     displacement: s.displacement,
     rollerHeight: s.rollerHeight,
     rollerOverhang: s.rollerOverhang,
@@ -228,6 +252,8 @@ export function toScenario(s: AppState): ScenarioInput {
       crossed: s.crossed,
       single: s.singleAttach,
     },
+    waves: s.wavesOn && s.waveHs > 0 ? { hs: s.waveHs, tp: Math.max(0.5, s.wavePeriod) } : null,
+    fishtail: s.fishtailOn && s.fishtailAmp > 0 ? { amplitudeDeg: s.fishtailAmp, periodS: s.fishtailPeriod } : null,
     snatchSpeed: s.snatchSpeed,
   };
 }

@@ -6,6 +6,8 @@ import { brent } from './numeric';
 import { ropeStrain, type RopeType } from './rope';
 import type { Windage } from './wind';
 import type { BoatType } from './windage';
+import { hullWater } from './waves';
+import { fishtailExtreme, waveResponse, type FishtailExtreme, type WaveResponse } from './dynamics';
 import {
   initialPose,
   toEarth,
@@ -20,7 +22,9 @@ import {
 
 /** Everything the calculation needs, in SI units (N, m, kg) except where noted. */
 export interface ScenarioInput {
+  boatType: BoatType;
   loa: number;
+  beam: number;
   displacement: number;
   /** Bow roller height above water, m. */
   rollerHeight: number;
@@ -71,6 +75,10 @@ export interface ScenarioInput {
     /** Which cleat a single line uses. */
     single: 'port' | 'centre' | 'starboard';
   };
+  /** Wind waves from the wind direction: significant height (m) and peak period (s); null = flat water. */
+  waves: null | { hs: number; tp: number };
+  /** Fishtailing at anchor (only when there are no stern lines): swing ± amplitude, and its period (animation only). */
+  fishtail: null | { amplitudeDeg: number; periodS: number };
   /** Boat speed used for the indicative snatch-load estimate, m/s. */
   snatchSpeed: number;
 }
@@ -129,6 +137,10 @@ export function buildModel(inp: ScenarioInput): MooringModel {
     anchor: [inp.anchor.distance, inp.anchor.offset],
     lines,
     displacement: inp.displacement,
+    waves:
+      inp.waves && inp.waves.hs > 0
+        ? { spec: { hs: inp.waves.hs, tp: inp.waves.tp }, hull: hullWater(inp.boatType, inp.loa, inp.beam), depth: inp.depth }
+        : null,
   };
 }
 
@@ -137,6 +149,25 @@ export interface ElementLoad {
   mbl: number;
   ratio: number;
   status: Status;
+}
+
+export interface AnchorCheck {
+  load: number;
+  upliftDeg: number;
+  pull: 'horizontal' | 'upward';
+  holdingFlat: number;
+  holding: number;
+  upliftFactor: number;
+  ratio: number;
+  status: Status;
+}
+
+/** Loads of every element in one situation (static, fishtail extreme, or largest wave). */
+export interface Loads {
+  chain: ElementLoad;
+  snubber: ElementLoad | null;
+  lines: ElementLoad[];
+  anchor: AnchorCheck;
 }
 
 export interface CaseResult {
@@ -155,17 +186,14 @@ export interface CaseResult {
   chain: ElementLoad;
   snubber: ElementLoad | null;
   lines: ElementLoad[];
-  anchor: {
-    load: number;
-    upliftDeg: number;
-    pull: 'horizontal' | 'upward';
-    holdingFlat: number;
-    holding: number;
-    upliftFactor: number;
-    ratio: number;
-    status: Status;
-  };
+  anchor: AnchorCheck;
   snatch: { k: number; mEff: number; force: number };
+  /** Boat held at the end of its fishtail swing (swinging at anchor only). */
+  fishtail: (FishtailExtreme & Loads) | null;
+  /** Largest wave (1.86·Hs) acting on the static or fishtail equilibrium. */
+  waves: (WaveResponse & Loads) | null;
+  /** Worst of static, fishtail and waves for each element, and what drives it. */
+  peak: Loads & { source: string };
 }
 
 export interface ScenarioResult {
@@ -181,15 +209,73 @@ const element = (tension: number, mbl: number): ElementLoad => {
   return { tension, mbl, ratio, status: loadStatus(ratio) };
 };
 
-export function evaluateCase(inp: ScenarioInput, model: MooringModel, rest: Equilibrium, windKn: number, initial?: Pose): CaseResult {
+function anchorCheck(inp: ScenarioInput, load: number, upliftDeg: number): AnchorCheck {
+  const flat = anchorHolding(inp.anchor.mass, inp.anchor.holdingRatio, 0);
+  const holding = anchorHolding(inp.anchor.mass, inp.anchor.holdingRatio, upliftDeg);
+  const ratio = holding > 0 ? load / holding : Infinity;
+  return {
+    load,
+    upliftDeg,
+    pull: upliftDeg > 1e-6 ? 'upward' : 'horizontal',
+    holdingFlat: flat,
+    holding,
+    upliftFactor: upliftFactor(upliftDeg),
+    ratio,
+    status: holdingStatus(ratio),
+  };
+}
+
+function loadsOf(inp: ScenarioInput, chainT: number, lineT: number[], anchorT: number, upliftDeg: number): Loads {
+  return {
+    chain: element(chainT, inp.chain.mbl),
+    snubber: inp.snubber ? element(chainT, inp.snubber.mbl) : null,
+    lines: lineT.map((t) => element(t, inp.lines.mbl * inp.lines.efficiency)),
+    anchor: anchorCheck(inp, anchorT, upliftDeg),
+  };
+}
+
+const eqLoads = (inp: ScenarioInput, eq: Equilibrium): Loads =>
+  loadsOf(inp, eq.rode.tensionTop, eq.lines.map((l) => l.tension), eq.rode.tensionAnchor, eq.rode.angleAnchor / DEG);
+
+/** Element-by-element worst of several load sets. */
+function worstOf(sets: Loads[]): Loads {
+  const pick = <T extends { ratio: number }>(xs: T[]): T => xs.reduce((a, b) => (b.ratio > a.ratio ? b : a));
+  return {
+    chain: pick(sets.map((s) => s.chain)),
+    snubber: sets[0].snubber ? pick(sets.map((s) => s.snubber!)) : null,
+    lines: sets[0].lines.map((_, i) => pick(sets.map((s) => s.lines[i]))),
+    anchor: pick(sets.map((s) => s.anchor)),
+  };
+}
+
+/** Fishtail and wave loads on top of a solved equilibrium, and the resulting peak. */
+export function dynamicLoads(inp: ScenarioInput, model: MooringModel, eq: Equilibrium): Pick<CaseResult, 'fishtail' | 'waves' | 'peak'> {
+  const staticLoads = eqLoads(inp, eq);
+  const ft = inp.fishtail ? fishtailExtreme(model, eq, inp.fishtail.amplitudeDeg) : null;
+  const fishtail = ft ? { ...ft, ...eqLoads(inp, ft.eq) } : null;
+  const base = ft?.eq ?? eq;
+  const wr = waveResponse(model, base);
+  const waves = wr ? { ...wr, ...loadsOf(inp, wr.chainMax, wr.linesMax, wr.anchorMax, wr.upliftMaxDeg) } : null;
+  const sets = [staticLoads, ...(fishtail ? [fishtail] : []), ...(waves ? [waves] : [])];
+  const parts = [fishtail ? `fishtail ±${fishtail.amplitudeDeg}°` : '', waves ? `largest wave ${waves.height.toFixed(1)} m` : ''].filter(Boolean);
+  return { fishtail, waves, peak: { ...worstOf(sets), source: parts.length ? parts.join(' + ') : 'static' } };
+}
+
+const noDynamics = (inp: ScenarioInput, eq: Equilibrium): Pick<CaseResult, 'fishtail' | 'waves' | 'peak'> => ({
+  fishtail: null,
+  waves: null,
+  peak: { ...eqLoads(inp, eq), source: 'static' },
+});
+
+/** True when fishtailing or waves add loads on top of the static equilibrium. */
+export const hasDynamics = (inp: ScenarioInput): boolean =>
+  Boolean((inp.waves && inp.waves.hs > 0) || (inp.fishtail && inp.fishtail.amplitudeDeg > 0 && inp.lines.count === 0));
+
+export function evaluateCase(inp: ScenarioInput, model: MooringModel, rest: Equilibrium, windKn: number, initial?: Pose, dynamics = true): CaseResult {
   const eq = solveEquilibrium(model, knotsToMs(windKn), inp.windFromDeg, { initial: initial ?? rest.pose });
   const sternU = model.lines[0]?.attach[0] ?? -model.loa / 2;
   const sternY = (p: Pose): number => p.y + Math.sin(p.psi) * sternU;
   const upliftDeg = eq.rode.angleAnchor / DEG;
-  const flat = anchorHolding(inp.anchor.mass, inp.anchor.holdingRatio, 0);
-  const holding = anchorHolding(inp.anchor.mass, inp.anchor.holdingRatio, upliftDeg);
-  const anchorLoad = eq.rode.tensionAnchor;
-  const hRatio = holding > 0 ? anchorLoad / holding : Infinity;
   return {
     eq,
     windKn,
@@ -203,17 +289,9 @@ export function evaluateCase(inp: ScenarioInput, model: MooringModel, rest: Equi
     chain: element(eq.rode.tensionTop, inp.chain.mbl),
     snubber: inp.snubber ? element(eq.rode.tensionTop, inp.snubber.mbl) : null,
     lines: eq.lines.map((l) => element(l.tension, inp.lines.mbl * inp.lines.efficiency)),
-    anchor: {
-      load: anchorLoad,
-      upliftDeg,
-      pull: eq.rode.vAnchor > 1e-6 ? 'upward' : 'horizontal',
-      holdingFlat: flat,
-      holding,
-      upliftFactor: upliftFactor(upliftDeg),
-      ratio: hRatio,
-      status: holdingStatus(hRatio),
-    },
+    anchor: { ...anchorCheck(inp, eq.rode.tensionAnchor, upliftDeg), pull: eq.rode.vAnchor > 1e-6 ? 'upward' : 'horizontal' },
     snatch: snatchLoad(model, eq, inp.snatchSpeed),
+    ...(dynamics ? dynamicLoads(inp, model, eq) : noDynamics(inp, eq)),
   };
 }
 
@@ -221,14 +299,15 @@ export function solveRest(model: MooringModel): Equilibrium {
   return solveEquilibrium(model, 0, 90, { initial: initialPose(model) });
 }
 
-export function runScenario(inp: ScenarioInput): ScenarioResult {
+/** Full analysis. With dynamics = false, fishtail and wave loads are skipped (fast, for live slider drags). */
+export function runScenario(inp: ScenarioInput, dynamics = true): ScenarioResult {
   const warnings: string[] = [];
   const z = inp.depth + inp.rollerHeight;
   if (inp.chain.length <= z) throw new Error(`Chain (${inp.chain.length} m) is shorter than depth + roller height (${z.toFixed(1)} m).`);
   const model = buildModel(inp);
   const rest = solveRest(model);
-  const sustained = evaluateCase(inp, model, rest, inp.windKn);
-  const gust = evaluateCase(inp, model, rest, inp.windKn * inp.gustFactor, sustained.eq.pose);
+  const sustained = evaluateCase(inp, model, rest, inp.windKn, undefined, dynamics);
+  const gust = evaluateCase(inp, model, rest, inp.windKn * inp.gustFactor, sustained.eq.pose, dynamics);
 
   if (!rest.converged || !sustained.eq.converged || !gust.eq.converged)
     warnings.push('The equilibrium solver did not fully converge — check the geometry (lengths, distances).');
@@ -243,6 +322,8 @@ export function runScenario(inp: ScenarioInput): ScenarioResult {
     warnings.push('Very high pretension at rest: the chain is nearly straight. Shorten the anchor distance or lengthen the chain/lines.');
   if (gust.eq.rode.suspended >= inp.chain.length - 1e-6)
     warnings.push('In the gust, all the chain is lifted off the seabed: the anchor is pulled upward and may break out.');
+  if (dynamics && gust.peak.chain.ratio > 2 * gust.chain.ratio)
+    warnings.push(`Waves / fishtailing more than double the chain load (${gust.peak.source}). Lengthen the scope or fit a nylon snubber.`);
   if (inp.snubber && inp.snubber.length > inp.depth)
     warnings.push('The snubber is longer than the water depth: the hook may touch the seabed when the rode is slack.');
   const sternX = swinging
@@ -257,6 +338,12 @@ export interface SweepPoint {
   chain: number;
   anchor: number;
   lines: number[];
+  /** Peaks with fishtail and the largest wave (equal to the static values when both are off). */
+  chainPeak: number;
+  anchorPeak: number;
+  linesPeak: number[];
+  /** Estimated holding at the anchor's peak-load uplift, N. */
+  holdingPeak: number;
   windForce: number;
   sideShift: number;
   upliftDeg: number;
@@ -264,18 +351,23 @@ export interface SweepPoint {
 }
 
 /** Loads vs wind speed (mean speed × `speedFactor`, e.g. the gust factor), solved by continuation. */
-export function sweep(inp: ScenarioInput, speedsKn: number[], speedFactor = 1): SweepPoint[] {
+export function sweep(inp: ScenarioInput, speedsKn: number[], speedFactor = 1, dynamics = false): SweepPoint[] {
   const model = buildModel(inp);
   const rest = solveRest(model);
   let pose = rest.pose;
   return speedsKn.map((kn) => {
     const eq = solveEquilibrium(model, knotsToMs(kn * speedFactor), inp.windFromDeg, { initial: pose });
     pose = eq.pose;
+    const { peak } = dynamics ? dynamicLoads(inp, model, eq) : noDynamics(inp, eq);
     return {
       windKn: kn,
       chain: eq.rode.tensionTop,
       anchor: eq.rode.tensionAnchor,
       lines: eq.lines.map((l) => l.tension),
+      chainPeak: peak.chain.tension,
+      anchorPeak: peak.anchor.load,
+      linesPeak: peak.lines.map((l) => l.tension),
+      holdingPeak: peak.anchor.holding,
       windForce: eq.wind.force,
       sideShift: eq.pose.y - rest.pose.y,
       upliftDeg: eq.rode.angleAnchor / DEG,

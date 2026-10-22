@@ -26,6 +26,23 @@ export function resultsTable(s: AppState, r: ScenarioResult): string {
     ],
   });
 
+  // Peaks with waves and/or fishtailing
+  const dyn = A.peak.source !== 'static' || B.peak.source !== 'static';
+  if (dyn) {
+    const peakRows: Row[] = [
+      ['Driven by', '—', ...both((c) => c.peak.source)],
+      ['Chain — peak tension', '—', ...both((c) => `<strong>${F(c.peak.chain.tension)}</strong>`)],
+      ['Chain — peak / MBL', '—', ...both((c) => badge(c.peak.chain.status, pct(c.peak.chain.ratio)))],
+    ];
+    if (A.peak.snubber && B.peak.snubber) peakRows.push(['Snubber — peak / MBL', '—', badge(A.peak.snubber.status, pct(A.peak.snubber.ratio)), badge(B.peak.snubber.status, pct(B.peak.snubber.ratio))]);
+    A.peak.lines.forEach((_, i) =>
+      peakRows.push([`${s.lineCount === 1 ? 'Stern line' : i === 0 ? 'Port line' : 'Starboard line'} — peak / MBL`, '—', ...both((c) => `${F(c.peak.lines[i].tension)} ${badge(c.peak.lines[i].status, pct(c.peak.lines[i].ratio))}`)]),
+    );
+    peakRows.push(['Anchor — peak load / holding', '—', ...both((c) => `${F(c.peak.anchor.load)} ${badge(c.peak.anchor.status, pct(c.peak.anchor.ratio))}`)]);
+    peakRows.push(['Anchor — uplift at peak', '—', ...both((c) => deg(c.peak.anchor.upliftDeg))]);
+    groups.push({ title: 'Peak loads with waves / fishtailing', rows: peakRows });
+  }
+
   const chainRows: Row[] = [
     ['Horizontal tension H', F(R.rode.h), ...both((c) => F(c.eq.rode.h))],
     ['Tension at the bow', F(R.rode.tensionTop), ...both((c) => `<strong>${F(c.chain.tension)}</strong>`)],
@@ -92,6 +109,35 @@ export function resultsTable(s: AppState, r: ScenarioResult): string {
       ['Anchor load / holding', pct(R.rode.tensionAnchor / A.anchor.holdingFlat), ...both((c) => badge(c.anchor.status, pct(c.anchor.ratio)))],
     ],
   });
+
+  if (A.fishtail && B.fishtail) {
+    groups.push({
+      title: `Fishtailing — held at ±${A.fishtail.amplitudeDeg}° off the wind`,
+      rows: [
+        ['Wind angle on the boat at the end of the swing', '—', ...both((c) => deg(c.fishtail!.eq.wind.angleDeg))],
+        ['Wind force at the end of the swing', '—', ...both((c) => F(c.fishtail!.eq.wind.force))],
+        ['Chain tension at the end of the swing', '—', ...both((c) => `<strong>${F(c.fishtail!.chain.tension)}</strong>`)],
+        ['× the head-to-wind load', '—', ...both((c) => `${(c.fishtail!.chain.tension / Math.max(1, c.chain.tension)).toFixed(2)} ×`)],
+        ['Bow moves (from head to wind)', '—', ...both((c) => m(Math.hypot(c.fishtail!.eq.bow[0] - c.eq.bow[0], c.fishtail!.eq.bow[1] - c.eq.bow[1]), 2))],
+      ],
+    });
+  }
+
+  if (A.waves && B.waves) {
+    const w = A.waves;
+    groups.push({
+      title: `Waves — Hs ${s.waveHs} m, period ${w.period.toFixed(1)} s, from the wind`,
+      rows: [
+        ['Largest wave (1.86 × Hs) · wavelength', '—', ...both((c) => `${c.waves!.height.toFixed(2)} m · ${c.waves!.length.toFixed(1)} m`)],
+        ['Wave angle on the hull', '—', ...both((c) => deg(c.waves!.betaDeg))],
+        ['Mean wave drift force (in the equilibrium)', '—', ...both((c) => F(c.waves!.drift))],
+        ['Water surge ± · boat surge (largest)', '—', ...both((c) => `±${c.waves!.waterSurge.toFixed(2)} m · ${c.waves!.boatSurge.toFixed(2)} m`)],
+        ['Boat natural surge period on the mooring', '—', ...both((c) => `${c.waves!.naturalPeriod.toFixed(1)} s`)],
+        ['Bow lift the wave imposes · actual', '—', ...both((c) => `${c.waves!.bowLift.toFixed(2)} m · ${c.waves!.bowMotion.toFixed(2)} m`)],
+        ['Chain tension over the waves (min – max)', '—', ...both((c) => `${F(c.waves!.chainMin)} – <strong>${F(c.waves!.chainMax)}</strong>`)],
+      ],
+    });
+  }
 
   groups.push({
     title: `Dynamic — indicative only (surge ${s.snatchSpeed} m/s)`,

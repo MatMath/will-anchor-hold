@@ -16,6 +16,8 @@ export interface SideInput {
   /** Largest anchor–roller distance across the cases, so the scale doesn't jump. */
   xMax: number;
   frozen?: ViewBox;
+  /** Animated wave along this view: amplitude, wave number, cos(angle between rode and waves), phase ωt, bow rise (m). */
+  wave?: { amp: number; k: number; cosGamma: number; phase: number; dz: number };
 }
 
 export function renderSide(svg: SVGSVGElement, p: SideInput): ViewBox {
@@ -37,9 +39,18 @@ export function renderSide(svg: SVGSVGElement, p: SideInput): ViewBox {
 
   // Sky, water, seabed
   out.push(`<rect class="s-sky" x="${vb.x}" y="${vb.y}" width="${vb.w}" height="${-depth * V - vb.y}"/>`);
-  out.push(`<rect class="s-water" x="${vb.x}" y="${-depth * V}" width="${vb.w}" height="${depth * V}"/>`);
+  if (p.wave) {
+    // Water surface η(x) = a·cos(k·cosγ·(x − x_bow) − ωt), so the bow sees a·cos(ωt).
+    const { amp, k: kw, cosGamma, phase } = p.wave;
+    const pts: Array<[number, number]> = [];
+    for (let i = 0; i <= 160; i++) {
+      const x = vb.x + (vb.w * i) / 160;
+      pts.push([x, -(depth + amp * Math.cos(kw * cosGamma * (x - st.x) - phase)) * V]);
+    }
+    out.push(`<path class="s-water" d="${pathOf([...pts, [vb.x + vb.w, 0], [vb.x, 0]], true)}"/>`);
+  } else out.push(`<rect class="s-water" x="${vb.x}" y="${-depth * V}" width="${vb.w}" height="${depth * V}"/>`);
   out.push(`<rect class="s-bed" x="${vb.x}" y="0" width="${vb.w}" height="${vb.y + vb.h}"/>`);
-  out.push(`<line class="s-surface" x1="${vb.x}" y1="${-depth * V}" x2="${vb.x + vb.w}" y2="${-depth * V}" vector-effect="non-scaling-stroke"/>`);
+  if (!p.wave) out.push(`<line class="s-surface" x1="${vb.x}" y1="${-depth * V}" x2="${vb.x + vb.w}" y2="${-depth * V}" vector-effect="non-scaling-stroke"/>`);
   out.push(`<line class="s-bedline" x1="${vb.x}" y1="0" x2="${vb.x + vb.w}" y2="0" vector-effect="non-scaling-stroke"/>`);
 
   // Depth dimension
@@ -52,7 +63,7 @@ export function renderSide(svg: SVGSVGElement, p: SideInput): ViewBox {
   const bx = st.x;
   const L = s.loa;
   const fb = s.freeboard;
-  const wl = depth;
+  const wl = depth + (p.wave?.dz ?? 0); // the hull rides the wave at the bow
   const draft = s.boatType === 'catamaran' ? 1.2 : Math.max(1.4, 0.15 * L);
   const hull: Array<[number, number]> =
     s.boatType === 'catamaran'
@@ -78,7 +89,7 @@ export function renderSide(svg: SVGSVGElement, p: SideInput): ViewBox {
     const [hx, hz] = prof.snubber[0];
     out.push(`<circle class="s-hook" cx="${hx}" cy="${-hz * V}" r="${3.5 * k}" vector-effect="non-scaling-stroke"/>`);
   }
-  out.push(`<circle class="s-roller" cx="${st.x}" cy="${-Z * V}" r="${4 * k}" vector-effect="non-scaling-stroke"/>`);
+  out.push(`<circle class="s-roller" cx="${st.x}" cy="${-(Z + (p.wave?.dz ?? 0)) * V}" r="${4 * k}" vector-effect="non-scaling-stroke"/>`);
 
   // Anchor glyph
   const r = 7 * k;

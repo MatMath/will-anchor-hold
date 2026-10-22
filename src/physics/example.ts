@@ -8,7 +8,9 @@ import { LINE_EFFICIENCY, sternCleatSpacing, type ScenarioInput } from './scenar
  * The stern-line length (6.455 m) gives ≈ 1 kN of chain pretension at rest.
  */
 export const WORKED_EXAMPLE: ScenarioInput = {
+  boatType: 'monohull',
   loa: 12.8,
+  beam: 4.2,
   displacement: 10500,
   rollerHeight: 1.3,
   rollerOverhang: 0.3,
@@ -35,5 +37,7 @@ export const WORKED_EXAMPLE: ScenarioInput = {
     crossed: false,
     single: 'centre',
   },
+  waves: null,
+  fishtail: null,
   snatchSpeed: 0.5,
 };

@@ -1344,3 +1344,44 @@ input[type='range']:focus-visible {
 .grid2 .field-check > .hint {
   grid-row: 3;
 }
+
+/* Waves, fishtailing and the gust animation */
+.play-dyn {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.dyn-item {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.p-crest {
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+  stroke-width: 1.5;
+}
+.c-line.c-dash {
+  stroke-dasharray: 6 4;
+}
+.c-line.s-wind {
+  stroke: var(--wind);
+  stroke-width: 1.5;
+}
+.c-gust {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+svg.anim-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.badge-plain {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}

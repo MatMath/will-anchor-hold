@@ -7,14 +7,20 @@ import {
   CHAIN_GRADES,
   ROPES,
   estimateWindageItems,
-  knotsToMs,
   anchorDistanceForPretension,
   liftOffWind,
   maxAnchorDistance,
   buildModel,
   runScenario,
   solveRest,
-  solveEquilibrium,
+  MooringAnimation,
+  KGF,
+  hasDynamics,
+  holdingStatus,
+  loadStatus,
+  toEarth,
+  windDirectionVector,
+  type AnimFrame,
   sweep,
   upliftFactor,
   type Equilibrium,
@@ -75,7 +81,8 @@ app.innerHTML = `
           ${num('windDir', 'Wind from (relative to bow)', '°', { min: 0, max: 359, step: 5, slider: [0, 355] })}
           <div class="row-btns">
             ${segmented('viewCase', 'Case shown in the diagrams', [['rest', 'At rest'], ['sustained', 'Sustained'], ['gust', 'Gust']])}
-            <button type="button" class="btn" id="btn-animate" title="Ramp the wind from calm up to the gust and back">▶ Animate gust</button>
+            <button type="button" class="btn" id="btn-animate" title="Play 10 gusts with waves and fishtailing">▶ Animate 10 gusts</button>
+            ${segmented('animSpeed', 'Animation speed', [[2, '×2'], [5, '×5'], [10, '×10']])}
           </div>
         </div>
       </div>
@@ -84,6 +91,17 @@ app.innerHTML = `
         ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 1, slider: [20, 120], id: 'play-anchor', hint: '<span id="snap-hint"></span>' })}
         <div data-show-if="lineCount!=0">${num('lineLength', 'Stern line length', 'm', { min: 1, max: 80, step: 1, slider: [1, 80] })}</div>
         ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1, slider: [1, 25] })}
+      </div>
+      <div class="play-dyn">
+        <div class="dyn-item">
+          ${check('wavesOn', 'Waves from the wind')}
+          <div data-show-if="wavesOn">${num('waveHs', 'Wave height Hs', 'm', { min: 0.05, max: 4, step: 0.05, slider: [0.1, 2.5] })}</div>
+        </div>
+        <div class="dyn-item">
+          ${check('fishtailOn', 'Fishtailing at anchor')}
+          <div data-show-if="fishtailOn">${num('fishtailAmp', 'Swing either side of the wind', '±°', { min: 0, max: 80, step: 1, slider: [0, 70] })}</div>
+          <small class="hint" data-show-if="lineCount!=0">Applies only when swinging at anchor: stern lines stop it.</small>
+        </div>
       </div>
     </div>
 
@@ -106,6 +124,17 @@ app.innerHTML = `
       </div>
       <svg id="side" class="side" role="img" aria-label="Side view of the chain catenary"></svg>
       <div class="facts" id="facts"></div>
+    </div>
+
+    <div class="card" id="anim-card" hidden>
+      <div class="card-head">
+        <h2>Live loads — 10 gusts</h2>
+        <div class="tools anim-status" id="anim-status"></div>
+      </div>
+      <div class="legend" id="anim-legend"></div>
+      <svg id="anim-chart" class="anim-chart" viewBox="0 0 640 260" role="img" aria-label="Wind speed and mooring loads during the gust animation"></svg>
+      <div class="facts" id="anim-facts"></div>
+      <p class="caption">Simulated time; the boat is put in equilibrium for each instant of wind and fishtail heading, and its surge in the waves is integrated on top. The largest waves arrive with the gust peaks.</p>
     </div>
 
     <div id="warnings"></div>
@@ -212,6 +241,22 @@ app.innerHTML = `
       </div>
     </details>
 
+    <details class="card acc" open>
+      <summary><h2>Waves &amp; fishtailing</h2></summary>
+      ${check('wavesOn', 'Waves from the wind direction')}
+      <div class="grid2" data-show-if="wavesOn">
+        ${num('waveHs', 'Significant wave height Hs', 'm', { min: 0.05, max: 4, step: 0.05 })}
+        ${num('wavePeriod', 'Wave period', 's', { min: 0.5, max: 15, step: 0.1, auto: 'wavePeriodAuto', hint: 'Auto: 3.6·√Hs, a steep young wind sea (steepness ≈ 1/20).' })}
+      </div>
+      <p class="hint" data-show-if="wavesOn">Peaks use the largest wave in about 1 000 (1.86 × Hs). The mean wave drift force adds to the wind load.</p>
+      ${check('fishtailOn', 'Fishtailing (sheering) at anchor')}
+      <div class="grid2" data-show-if="fishtailOn">
+        ${num('fishtailAmp', 'Swing either side of the wind', '±°', { min: 0, max: 80, step: 1, hint: 'Well-mannered boat ±10°, typical fin keel ±20–30°, bad ±60° (Practical Sailor).' })}
+        ${num('fishtailPeriod', 'Swing period (animation only)', 's', { min: 5, max: 180, step: 1 })}
+      </div>
+      <p class="hint" data-show-if="lineCount!=0">Fishtailing applies only when swinging at anchor (no stern lines).</p>
+    </details>
+
     <details class="card acc">
       <summary><h2>Dynamic estimate</h2></summary>
       ${num('snatchSpeed', 'Boat speed stopped by the mooring', 'm/s', { min: 0, max: 3, step: 0.1, hint: 'Used only for the indicative snatch-load figure: ΔF = v·√(m·k).' })}
@@ -234,6 +279,7 @@ app.innerHTML = `
     <li><strong>Quasi-static</strong>: forces are balanced at each wind speed; no inertia, no waves, no dynamic yawing (sheering). The boat's steady heading change <em>is</em> solved: sideways shift, fore-aft shift and rotation (3 degrees of freedom).</li>
     <li><strong>Wind</strong>: F = ½·ρ·Cd·A·V² with ρ = 1.225 kg/m³, applied at one centre of effort, acting straight downwind (no lift). Area and Cd blend as A·|sin θ| + A·|cos θ| with the apparent angle. Uniform wind, no height gradient.</li>
     <li><strong>No current</strong> and no hull resistance: in steady state only the chain and the lines hold the boat.</li>
+    <li><strong>Waves</strong> (optional) come from the wind: a mean drift force plus a surge simulation of the boat riding the largest wave (1.86 × Hs), with the bow lifted against buoyancy. <strong>Fishtailing</strong> (swinging at anchor only) holds the boat ±A° off the wind. Both are simplified and indicative — see the validation notes.</li>
     <li><strong>Chain</strong>: elastic catenary (Irvine) on a flat, frictionless seabed, submerged weight throughout (the bit above water is slightly heavier). The anchor is a fixed point.</li>
     <li><strong>Stern lines</strong>: straight (no sag), with the typical load–stretch curve of the chosen rope. Real ropes differ ±20% from catalogue values; wet nylon is weaker and stretchier.</li>
     <li><strong>Anchor holding</strong> is an order-of-magnitude guide only. When the chain lifts the shank, holding is reduced: no loss up to 3°, then about 3% less per degree (fitted to yacht scope tests; see the validation notes). Thresholds: amber above 50%, red above 80% of the estimate.</li>
@@ -263,8 +309,22 @@ let snapD: number | null = null;
 /** Exact balanced distance and the rest pretension at the whole-metre snap point. */
 let snapExact: number | null = null;
 let snapH = 0;
-let animWind: number | null = null;
-let animEq: Equilibrium | null = null;
+/** Wind-speed sweep of peak loads (waves / fishtail), computed in the background at 5 kn steps. */
+let peakPoints: Array<{ windKn: number; chain: number; anchor: number; holding: number; lines: number[] }> = [];
+let peakToken = 0;
+/** True when `result` includes the (slower) wave and fishtail analysis. */
+let resultIsFull = true;
+let anim: {
+  sim: MooringAnimation;
+  frame: AnimFrame | null;
+  series: Array<{ t: number; wind: number; chain: number; anchor: number; lines: number[]; anchorRatio: number; yaw: number; wave: number }>;
+  raf: number;
+  last: number;
+  done: boolean;
+  planView: ViewBox;
+  sideXMax: number;
+  peakRef: number;
+} | null = null;
 let planFrozen: ViewBox | undefined;
 let sideFrozen: ViewBox | undefined;
 
@@ -278,10 +338,13 @@ const AUTO_OF: Partial<Record<Key, Key>> = {
   snubberMbl: 'snubberMblAuto',
   lineMbl: 'lineMblAuto',
   holdingRatio: 'holdingAuto',
+  wavePeriod: 'wavePeriodAuto',
 };
 const DIM_KEYS: Key[] = ['loa', 'beam', 'freeboard', 'mastHeight', 'boatType'];
 
 function update(patch: Partial<AppState>): void {
+  // A running animation uses the inputs it started with; view-only changes don't stop it.
+  if (anim && !anim.done && Object.keys(patch).some((k) => !['units', 'animSpeed', 'planZoom', 'exaggeration', 'vExag', 'viewCase', 'sweepMode', 'sweepGust'].includes(k))) stopAnimation();
   let next = { ...state, ...patch };
   if ('boatType' in patch && patch.boatType !== state.boatType) next = { ...next, ...boatDefaults(next.boatType, next.loa) };
   if (DIM_KEYS.some((k) => k in patch) && !next.windageItemsEdited) {
@@ -310,7 +373,7 @@ function schedule(): void {
       pending = false;
       cancelAnimationFrame(frame);
       window.clearTimeout(fallback);
-      compute();
+      compute(false);
       render();
     };
     frame = requestAnimationFrame(run);
@@ -318,16 +381,25 @@ function schedule(): void {
   }
   window.clearTimeout(sweepTimer);
   sweepTimer = window.setTimeout(() => {
+    if (!resultIsFull) {
+      compute(true);
+      render();
+    }
     computeSweep();
     renderSweepChart();
     computeDerived();
     paintSliders();
-  }, 120);
+    startPeakSweep();
+  }, 150);
 }
 
-function compute(): void {
+/** full = include waves and fishtail (slower); otherwise only when the scenario has none. */
+function compute(full: boolean): void {
   try {
-    result = runScenario(toScenario(state));
+    const inp = toScenario(state);
+    const quick = !full && hasDynamics(inp);
+    result = runScenario(inp, !quick);
+    resultIsFull = !quick;
     error = null;
   } catch (e) {
     result = null;
@@ -367,10 +439,48 @@ function computeSweep(): void {
   points = sweep(toScenario(state), speeds, state.sweepGust ? state.gustFactor : 1);
 }
 
+/** Peak loads vs wind speed, a few points per timeout so the page stays responsive. */
+function startPeakSweep(): void {
+  const token = ++peakToken;
+  peakPoints = [];
+  const inp = toScenario(state);
+  if (!result || !hasDynamics(inp)) return;
+  const speeds = Array.from({ length: 11 }, (_, i) => 10 + 5 * i);
+  const factor = state.sweepGust ? state.gustFactor : 1;
+  const acc: typeof peakPoints = [];
+  const next = (i: number): void => {
+    if (token !== peakToken) return;
+    if (i >= speeds.length) {
+      peakPoints = acc;
+      renderSweepChart();
+      return;
+    }
+    try {
+      const p = sweep(inp, [speeds[i]], factor, true)[0];
+      acc.push({ windKn: speeds[i], chain: p.chainPeak, anchor: p.anchorPeak, holding: p.holdingPeak, lines: p.linesPeak });
+    } catch {
+      acc.push({ windKn: speeds[i], chain: NaN, anchor: NaN, holding: NaN, lines: [] });
+    }
+    window.setTimeout(() => next(i + 1), 0);
+  };
+  window.setTimeout(() => next(0), 30);
+}
+
 const $ = <T extends Element = HTMLElement>(sel: string): T => document.querySelector<T>(sel)!;
 
-function shownEq(r: ScenarioResult): { eq: Equilibrium; label: string } {
-  if (animWind !== null && animEq) return { eq: animEq, label: `Animating — ${animWind.toFixed(0)} kn` };
+function gustIndex(sim: MooringAnimation, t: number): number {
+  return sim.events.filter((e) => e.start <= t).length;
+}
+
+function shownEq(r: ScenarioResult): { eq: Equilibrium; label: string; frame?: AnimFrame } {
+  if (anim?.frame) {
+    const f = anim.frame;
+    const eq: Equilibrium = { ...f.base, pose: f.pose, rode: f.rode, lines: f.lines, chainForce: f.chainForce };
+    const parts = [`Gust ${Math.max(1, gustIndex(anim.sim, f.t))}/${anim.sim.events.length}`, `${f.windKn.toFixed(0)} kn`];
+    if (f.yawDeg) parts.push(`yaw ${f.yawDeg >= 0 ? '+' : ''}${f.yawDeg.toFixed(0)}°`);
+    if (f.waveAmp) parts.push(`wave ${(2 * f.waveAmp).toFixed(1)} m`);
+    return { eq, label: parts.join(' · '), frame: f };
+  }
   if (state.viewCase === 'rest') return { eq: r.rest, label: 'At rest (no wind)' };
   if (state.viewCase === 'gust') return { eq: r.gust.eq, label: `Gust — ${r.gust.windKn.toFixed(0)} kn` };
   return { eq: r.sustained.eq, label: `Sustained — ${r.sustained.windKn.toFixed(0)} kn` };
@@ -390,28 +500,47 @@ function render(): void {
     return;
   }
   const r = result;
-  const { eq, label } = shownEq(r);
+  const { eq, label, frame: af } = shownEq(r);
 
   // Status strip: sustained → gust for each element
   const chip = (name: string, a: { status: 'green' | 'amber' | 'red'; ratio: number }, b: { status: 'green' | 'amber' | 'red'; ratio: number }, cls: string): string =>
     `<div class="chip"><span class="key ${cls}" aria-hidden="true"></span><span class="chip-name">${name}</span>${badge(a.status, pct(a.ratio))}<span class="arrow" aria-label="then in gust">→</span>${badge(b.status, pct(b.ratio))}</div>`;
-  const chips = [chip('Chain', r.sustained.chain, r.gust.chain, 'k-chain')];
-  if (r.sustained.snubber && r.gust.snubber) chips.push(chip('Snubber', r.sustained.snubber, r.gust.snubber, 'k-snub'));
-  r.sustained.lines.forEach((l, i) => chips.push(chip(state.lineCount === 1 ? 'Line' : i === 0 ? 'Port line' : 'Stbd line', l, r.gust.lines[i], `k-line${i + 1}`)));
-  chips.push(chip('Anchor', r.sustained.anchor, r.gust.anchor, 'k-anchor'));
-  $('#status').innerHTML = `<div class="chips">${chips.join('')}</div><div class="wind-sum">Wind <strong>${force(r.sustained.eq.wind.force, u)}</strong> → gust <strong>${force(r.gust.eq.wind.force, u)}</strong> · side shift <strong>${Math.abs(r.sustained.drift.dy).toFixed(1)} m</strong> → <strong>${Math.abs(r.gust.drift.dy).toFixed(1)} m</strong></div>`;
+  // With waves / fishtailing the chips show the peaks.
+  const A = r.sustained.peak;
+  const B = r.gust.peak;
+  const chips = [chip('Chain', A.chain, B.chain, 'k-chain')];
+  if (A.snubber && B.snubber) chips.push(chip('Snubber', A.snubber, B.snubber, 'k-snub'));
+  A.lines.forEach((l, i) => chips.push(chip(state.lineCount === 1 ? 'Line' : i === 0 ? 'Port line' : 'Stbd line', l, B.lines[i], `k-line${i + 1}`)));
+  chips.push(chip('Anchor', A.anchor, B.anchor, 'k-anchor'));
+  const dynNote = !resultIsFull
+    ? ' · <em>adding waves / fishtail…</em>'
+    : B.source !== 'static'
+      ? ` · peaks include <strong>${esc(B.source)}</strong>`
+      : '';
+  $('#status').innerHTML = `<div class="chips">${chips.join('')}</div><div class="wind-sum">Wind <strong>${force(r.sustained.eq.wind.force, u)}</strong> → gust <strong>${force(r.gust.eq.wind.force, u)}</strong> · side shift <strong>${Math.abs(r.sustained.drift.dy).toFixed(1)} m</strong> → <strong>${Math.abs(r.gust.drift.dy).toFixed(1)} m</strong>${dynNote}</div>`;
 
   // Diagrams
   const forceRef = Math.max(
     r.gust.eq.wind.force,
     r.gust.eq.rode.h,
     ...r.gust.eq.lines.map((l) => Math.hypot(l.force[0], l.force[1])),
-    animEq ? animEq.rode.h : 0,
+    anim && !anim.done ? anim.peakRef : 0,
     1,
   );
-  renderPlan($<SVGSVGElement>('#plan'), { s: state, model: r.model, rest: r.rest, eq, forceRef, label, frozen: planFrozen });
+  const waveDraw =
+    af && anim && r.model.waves && af.waveAmp > 0
+      ? { lambda: anim.sim.wavelength, phase: af.wavePhase, amp: af.waveAmp, dir: windDirectionVector(state.windDir) as [number, number] }
+      : undefined;
+  renderPlan($<SVGSVGElement>('#plan'), { s: state, model: r.model, rest: r.rest, eq, forceRef, label, frozen: planFrozen ?? (anim && !anim.done ? anim.planView : undefined), waves: waveDraw });
   const xMax = Math.max(r.gust.eq.rode.x, r.rest.rode.x, eq.rode.x);
-  renderSide($<SVGSVGElement>('#side'), { s: state, rode: r.model.rode, rest: r.rest.rode, st: eq.rode, xMax, frozen: sideFrozen });
+  let sideWave: { amp: number; k: number; cosGamma: number; phase: number; dz: number } | undefined;
+  if (waveDraw && af) {
+    const bow = toEarth(af.pose, [r.model.bowX, 0]);
+    const c = [bow[0] - r.model.anchor[0], bow[1] - r.model.anchor[1]];
+    const cl = Math.hypot(c[0], c[1]) || 1;
+    sideWave = { amp: af.waveAmp, k: (2 * Math.PI) / waveDraw.lambda, cosGamma: (c[0] * waveDraw.dir[0] + c[1] * waveDraw.dir[1]) / cl, phase: af.wavePhase, dz: af.bowRise };
+  }
+  renderSide($<SVGSVGElement>('#side'), { s: state, rode: r.model.rode, rest: r.rest.rode, st: eq.rode, xMax: anim && !anim.done ? Math.max(xMax, anim.sideXMax) : xMax, frozen: sideFrozen, wave: sideWave });
 
   const st = eq.rode;
   $('#facts').innerHTML = [
@@ -430,7 +559,9 @@ function render(): void {
   warn.innerHTML = `
     ${w ? `<div class="alert alert-amber"><strong>Check the set-up</strong><ul>${w}</ul></div>` : ''}
     <div class="alert alert-info">
-      <strong>⚠ These are static loads.</strong> A gust or a wave snatch load can be several times the static load.
+      ${r.gust.peak.source !== 'static'
+        ? `<strong>⚠ Peaks include ${esc(r.gust.peak.source)}.</strong> They are quasi-static estimates plus a simplified surge simulation; real snatch loads scatter widely.`
+        : '<strong>⚠ These are static loads.</strong> A gust or a wave snatch load can be several times the static load. Turn on <strong>waves</strong> and, when swinging, <strong>fishtailing</strong> to see them.'}
       A sudden gust on an elastic mooring can overshoot to about <strong>${force(peak, u)}</strong> of wind load (2 × the gust increment).
       A ${state.snatchSpeed} m/s surge stopped by the mooring adds about <strong>${force(r.gust.snatch.force, u)}</strong>.
       ${state.snubberOn ? 'Your snubber lowers the mooring stiffness and so the snatch load.' : 'A nylon <strong>snubber</strong>, or longer nylon stern lines, adds elasticity and cuts snatch loads sharply. Try one in the Snubber section.'}
@@ -464,6 +595,21 @@ function renderSweepChart(): void {
       limit: (i: number) => r.sustained.anchor.holdingFlat * upliftFactor(points[i].upliftDeg),
     },
   ];
+  // Peaks with waves / fishtail (computed every 5 kn, interpolated between), dashed.
+  if (peakPoints.length > 1) {
+    const at = (kn: number, get: (p: (typeof peakPoints)[number]) => number): number => {
+      let j = 0;
+      while (j < peakPoints.length - 2 && kn > peakPoints[j + 1].windKn) j++;
+      const a = peakPoints[j];
+      const b = peakPoints[j + 1];
+      const f = Math.min(1, Math.max(0, (kn - a.windKn) / (b.windKn - a.windKn)));
+      return get(a) + f * (get(b) - get(a));
+    };
+    series.push(
+      { id: 'chainPeak', name: 'Chain peak', cls: 's-chain c-dash', values: points.map((p) => at(p.windKn, (q) => q.chain)), limit: () => state.chainMbl * 1000 },
+      { id: 'anchorPeak', name: 'Anchor peak', cls: 's-anchor c-dash', values: points.map((p) => at(p.windKn, (q) => q.anchor)), limit: (i: number) => at(points[i].windKn, (q) => q.holding) },
+    );
+  }
   renderSweep(host, { s: state, points, series });
 }
 
@@ -637,7 +783,8 @@ document.addEventListener('click', (ev) => {
       windageItems: estimateWindageItems({ type: state.boatType, loa: state.loa, beam: state.beam, freeboard: state.freeboard, mastHeight: state.mastHeight }),
     });
   } else if (t.closest('#btn-animate')) {
-    animate();
+    if (anim && !anim.done) stopAnimation();
+    else startAnimation();
   }
 });
 
@@ -732,53 +879,190 @@ side.addEventListener('keydown', (ev) => {
   update({ depth: Math.max(0.5, round(state.depth + d, 1)) });
 });
 
-// Gust animation: calm → mean → gust → hold → mean, solved live each frame.
-let animRun = 0;
-function animate(): void {
+// ───────────────────────────── Gust animation ─────────────────────────────
+// 10 gusts with waves and fishtailing, simulated step by step (see physics/animation.ts).
+
+function startAnimation(): void {
+  stopAnimation();
   if (!result) return;
-  const run = ++animRun;
-  const model = result.model;
-  const mean = state.windKn;
-  const gust = state.windKn * state.gustFactor;
-  const keys: Array<[number, number]> = [
-    [0, 0],
-    [1400, mean],
-    [2000, mean],
-    [2900, gust],
-    [3900, gust],
-    [5000, mean],
-  ];
-  let pose = result.rest.pose;
-  const t0 = performance.now();
-  const tick = (now: number): void => {
-    if (run !== animRun) return;
-    const t = now - t0;
-    if (t > keys[keys.length - 1][0]) {
-      animWind = null;
-      animEq = null;
-      schedule();
-      return;
-    }
-    let i = 0;
-    while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
-    const [ta, wa] = keys[i];
-    const [tb, wb] = keys[i + 1];
-    const e = (t - ta) / (tb - ta);
-    const s = e * e * (3 - 2 * e);
-    animWind = wa + (wb - wa) * s;
-    animEq = solveEquilibrium(model, knotsToMs(animWind), state.windDir, { initial: pose });
-    pose = animEq.pose;
-    render();
-    requestAnimationFrame(tick);
+  const r = result;
+  const inp = toScenario(state);
+  let sim: MooringAnimation;
+  try {
+    sim = new MooringAnimation(inp, 10);
+  } catch {
+    return;
+  }
+  // Freeze the plan view around the gust case (and the fishtail extreme) so it does not jump every frame.
+  const svg = $<SVGSVGElement>('#plan');
+  const views = [r.gust.eq, ...(r.gust.fishtail ? [r.gust.fishtail.eq] : [])].map((eq) => {
+    renderPlan(svg, { s: state, model: r.model, rest: r.rest, eq, forceRef: Math.max(1, r.gust.peak.chain.tension), label: '' });
+    const b = svg.viewBox.baseVal;
+    return { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
+  });
+  const box = views.reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) }));
+  const pad = r.gust.fishtail ? 0.3 : 0.12;
+  const w = box.x1 - box.x0;
+  const h = box.y1 - box.y0;
+  anim = {
+    sim,
+    frame: null,
+    series: [],
+    raf: 0,
+    last: performance.now(),
+    done: false,
+    planView: { x: box.x0 - w * pad, y: box.y0 - h * pad, w: w * (1 + 2 * pad), h: h * (1 + 2 * pad) },
+    sideXMax: Math.max(r.gust.eq.rode.x, r.gust.fishtail?.eq.rode.x ?? 0) + 1.5,
+    peakRef: Math.max(r.gust.peak.chain.tension, r.gust.chain.tension),
   };
-  requestAnimationFrame(tick);
+  $('#anim-card').hidden = false;
+  $('#btn-animate').textContent = '■ Stop';
+  queueTick();
+}
+
+function queueTick(): void {
+  if (!anim || anim.done) return;
+  let fired = false;
+  const go = (): void => {
+    if (fired) return;
+    fired = true;
+    cancelAnimationFrame(anim?.raf ?? 0);
+    tick();
+  };
+  anim.raf = requestAnimationFrame(go);
+  window.setTimeout(go, 60); // background tabs pause rAF
+}
+
+function tick(): void {
+  if (!anim || anim.done) return;
+  const now = performance.now();
+  const dtReal = Math.min(0.5, Math.max(1 / 240, (now - anim.last) / 1000)); // hidden tabs tick ~1 Hz
+  anim.last = now;
+  const f = anim.sim.step(dtReal * state.animSpeed);
+  anim.frame = f;
+  const m = f.stepMax; // peaks since the last frame, so spikes between frames are not missed
+  anim.series.push({ t: f.t, wind: f.windKn, chain: m.chain, anchor: m.anchor, lines: m.lines, anchorRatio: m.anchorRatio, yaw: m.yawDeg, wave: m.waveHeight });
+  render();
+  renderAnimChart();
+  if (anim.sim.time >= anim.sim.duration) {
+    anim.done = true;
+    anim.frame = null;
+    $('#btn-animate').textContent = '▶ Animate 10 gusts';
+    render();
+    renderAnimChart();
+    return;
+  }
+  queueTick();
+}
+
+/** Stop a running animation; its chart stays on screen. */
+function stopAnimation(): void {
+  if (!anim || anim.done) return;
+  anim.done = true;
+  anim.frame = null;
+  cancelAnimationFrame(anim.raf);
+  $('#btn-animate').textContent = '▶ Animate 10 gusts';
+  render();
+  renderAnimChart();
+}
+
+function renderAnimChart(): void {
+  if (!anim) return;
+  const { sim, series } = anim;
+  const u = state.units as Units;
+  const W = 640;
+  const M = { l: 48, r: 14 };
+  const X = (t: number): number => M.l + (t / sim.duration) * (W - M.l - M.r);
+  const conv = (n: number): number => (u === 'kgf' ? n / KGF : n / 1000);
+  const chainMbl = state.chainMbl * 1000;
+  const nice = (v: number): number => {
+    const e = 10 ** Math.floor(Math.log10(Math.max(v, 1e-9)));
+    const b = v / e;
+    return (b <= 1 ? 1 : b <= 2 ? 2 : b <= 2.5 ? 2.5 : b <= 5 ? 5 : 10) * e;
+  };
+  // Wind strip (top) and loads (bottom): two panels, each with its own axis.
+  const wTop = 14;
+  const wBot = 64;
+  const windMax = nice(state.windKn * state.gustFactor * 1.1);
+  const Yw = (kn: number): number => wBot - (kn / windMax) * (wBot - wTop);
+  const lTop = 90;
+  const lBot = 236;
+  const maxLoad = Math.max(1, anim.peakRef, ...series.map((p) => Math.max(p.chain, p.anchor, ...p.lines)));
+  const loadMax = nice(conv(maxLoad) * 1.08);
+  const Yl = (n: number): number => lBot - (conv(n) / loadMax) * (lBot - lTop);
+  const g: string[] = [];
+  for (let i = 0; i <= 2; i++) {
+    const v = (windMax * i) / 2;
+    g.push(`<line class="c-grid" x1="${M.l}" x2="${W - M.r}" y1="${Yw(v)}" y2="${Yw(v)}"/><text class="c-tick" x="${M.l - 6}" y="${Yw(v) + 4}" text-anchor="end">${v.toFixed(0)}</text>`);
+  }
+  g.push(`<text class="c-axis-title" x="${M.l}" y="${wTop - 4}">Wind, kn</text>`);
+  for (let i = 0; i <= 4; i++) {
+    const v = (loadMax * i) / 4;
+    const y = lBot - (v / loadMax) * (lBot - lTop);
+    g.push(`<line class="c-grid" x1="${M.l}" x2="${W - M.r}" y1="${y}" y2="${y}"/><text class="c-tick" x="${M.l - 6}" y="${y + 4}" text-anchor="end">${v >= 100 ? v.toFixed(0) : v.toFixed(1).replace(/\.0$/, '')}</text>`);
+  }
+  g.push(`<text class="c-axis-title" x="${M.l}" y="${lTop - 6}">Load, ${u}</text>`);
+  for (const [frac, cls, lab] of [
+    [0.3, 'c-thr-amber', 'chain 30% MBL'],
+    [0.5, 'c-thr-red', 'chain 50% MBL'],
+  ] as const) {
+    if (conv(frac * chainMbl) > loadMax) continue;
+    const y = Yl(frac * chainMbl);
+    g.push(`<line class="c-thr ${cls}" x1="${M.l}" x2="${W - M.r}" y1="${y}" y2="${y}"/><text class="c-thr-lbl" x="${W - M.r - 4}" y="${y - 4}" text-anchor="end">${lab}</text>`);
+  }
+  for (const e of sim.events) {
+    const x = X(e.start + e.rise + e.hold / 2);
+    g.push(`<line class="c-gust" x1="${x}" x2="${x}" y1="${wTop}" y2="${lBot}"/>`);
+  }
+  const path = (get: (p: (typeof series)[number]) => number, Y: (v: number) => number): string =>
+    series.map((p, i) => `${i ? 'L' : 'M'}${X(p.t).toFixed(1)},${Y(get(p)).toFixed(1)}`).join('');
+  if (series.length) {
+    g.push(`<path class="c-line s-wind" d="${path((p) => p.wind, Yw)}"/>`);
+    g.push(`<path class="c-line s-anchor" d="${path((p) => p.anchor, Yl)}"/>`);
+    series[0].lines.forEach((_, i) => g.push(`<path class="c-line s-line${i + 1}" d="${path((p) => p.lines[i], Yl)}"/>`));
+    g.push(`<path class="c-line s-chain" d="${path((p) => p.chain, Yl)}"/>`);
+    const now = series[series.length - 1].t;
+    if (!anim.done) g.push(`<line class="c-now" x1="${X(now)}" x2="${X(now)}" y1="${wTop}" y2="${lBot}"/>`);
+  }
+  g.push(`<line class="c-axis" x1="${M.l}" x2="${W - M.r}" y1="${lBot}" y2="${lBot}"/>`);
+  for (let t = 0; t <= sim.duration; t += 30) g.push(`<text class="c-tick" x="${X(t)}" y="${lBot + 16}" text-anchor="middle">${t}</text>`);
+  g.push(`<text class="c-axis-title" x="${W - M.r}" y="${lBot + 16}" text-anchor="end">s</text>`);
+  $('#anim-chart').innerHTML = g.join('');
+
+  const key = (cls: string, name: string): string =>
+    `<span class="legend-item"><svg width="18" height="8" aria-hidden="true"><line class="c-line ${cls}" x1="1" x2="17" y1="4" y2="4"/></svg>${esc(name)}</span>`;
+  const lineNames = state.lineCount === 0 ? [] : state.lineCount === 1 ? ['Stern line'] : ['Port line', 'Stbd line'];
+  $('#anim-legend').innerHTML = [key('s-chain', 'Chain (bow)'), ...lineNames.map((n, i) => key(`s-line${i + 1}`, n)), key('s-anchor', 'Anchor load'), key('s-wind', 'Wind')].join('');
+
+  const last = series[series.length - 1];
+  const gi = last ? Math.min(sim.events.length, gustIndex(sim, last.t)) : 0;
+  $('#anim-status').innerHTML = anim.done ? `<span class="badge-plain">Finished · ${sim.events.length} gusts</span>` : `<span class="badge-plain">Gust ${Math.max(1, gi)} / ${sim.events.length} · ${last ? last.t.toFixed(0) : 0} s · ×${state.animSpeed}</span>`;
+  if (!series.length) return;
+  const maxOf = (get: (p: (typeof series)[number]) => number): (typeof series)[number] => series.reduce((a, b) => (get(b) > get(a) ? b : a));
+  const pc = maxOf((p) => p.chain);
+  const pa = maxOf((p) => p.anchorRatio);
+  const chainRatio = pc.chain / chainMbl;
+  const effLine = state.lineMbl * 1000 * LINE_EFFICIENCY;
+  const facts: Array<[string, string]> = [
+    ['Max chain', `${force(pc.chain, u)} ${badge(loadStatus(chainRatio), pct(chainRatio))}`],
+    ['Max anchor / holding', `${force(pa.anchor, u)} ${badge(holdingStatus(pa.anchorRatio), pct(pa.anchorRatio))}`],
+  ];
+  lineNames.forEach((n, i) => {
+    const p = maxOf((q) => q.lines[i]);
+    facts.push([`Max ${n.toLowerCase()}`, `${force(p.lines[i], u)} ${badge(loadStatus(p.lines[i] / effLine), pct(p.lines[i] / effLine))}`]);
+  });
+  facts.push(['Max wind', `${Math.max(...series.map((p) => p.wind)).toFixed(0)} kn`]);
+  if (series.some((p) => p.wave > 0)) facts.push(['Largest wave', `${Math.max(...series.map((p) => p.wave)).toFixed(2)} m`]);
+  if (series.some((p) => p.yaw !== 0)) facts.push(['Fishtail', `±${Math.max(...series.map((p) => Math.abs(p.yaw))).toFixed(0)}°`]);
+  $('#anim-facts').innerHTML = facts.map(([k, v]) => `<div><span>${k}</span><strong>${v}</strong></div>`).join('');
 }
 
 window.addEventListener('resize', () => schedule());
 
-compute();
+compute(true);
 render();
 computeSweep();
 renderSweepChart();
 computeDerived();
 paintSliders();
+startPeakSweep();
