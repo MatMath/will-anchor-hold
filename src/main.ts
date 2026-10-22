@@ -82,7 +82,7 @@ app.innerHTML = `
       <div class="play-sliders">
         ${num('chainLength', 'Chain out', 'm', { min: 5, max: 150, step: 1, slider: [10, 100], id: 'play-chain', hint: '<span id="chain-hint"></span>' })}
         ${num('anchorDistance', 'Anchor → quay', 'm', { min: 10, max: 200, step: 1, slider: [20, 120], id: 'play-anchor', hint: '<span id="snap-hint"></span>' })}
-        ${num('lineLength', 'Stern line length', 'm', { min: 1, max: 80, step: 1, slider: [1, 80] })}
+        <div data-show-if="lineCount!=0">${num('lineLength', 'Stern line length', 'm', { min: 1, max: 80, step: 1, slider: [1, 80] })}</div>
         ${num('depth', 'Water depth', 'm', { min: 0.5, max: 50, step: 0.1, slider: [1, 25] })}
       </div>
     </div>
@@ -196,9 +196,10 @@ app.innerHTML = `
     <details class="card acc" open>
       <summary><h2>Stern lines</h2></summary>
       <div class="grid2">
-        ${select('lineCount', 'Number of lines', [[1, '1 line'], [2, '2 lines']])}
+        ${select('lineCount', 'Number of lines', [[0, 'None — swing at anchor'], [1, '1 line'], [2, '2 lines']], 'None: no stern line, the boat swings on its anchor and turns head to wind.')}
         <div data-show-if="lineCount=1">${select('singleAttach', 'Cleat used', [['port', 'Port quarter'], ['centre', 'Centre (bridle)'], ['starboard', 'Starboard quarter']])}</div>
         <div data-show-if="lineCount=2">${check('crossed', 'Lines crossed', 'Port cleat to the starboard ring and vice versa.')}</div>
+        <div data-show-if="lineCount!=0">
         ${select('lineType', 'Rope', ropeOpts)}
         ${select('lineD', 'Diameter', diaOpts([8, 10, 12, 14, 16, 18, 20, 22, 24]))}
         ${num('lineMbl', 'MBL (catalogue, each)', 'kN', { min: 1, max: 500, step: 0.1, auto: 'lineMblAuto' })}
@@ -207,6 +208,7 @@ app.innerHTML = `
         ${num('cleatHeight', 'Cleat height above water', 'm', { min: 0, max: 4, step: 0.05 })}
         ${num('shoreSpread', 'Shore points apart', 'm', { min: 0, max: 30, step: 0.5, hint: '0 = both lines to one ring or rock.' })}
         ${num('shoreHeight', 'Shore point above water', 'm', { min: -1, max: 5, step: 0.1 })}
+        </div>
       </div>
     </details>
 
@@ -347,7 +349,7 @@ function computeDerived(): void {
     liftKn = null;
   }
   try {
-    const d = anchorDistanceForPretension(inp, SNAP_PRETENSION);
+    const d = state.lineCount === 0 ? null : anchorDistanceForPretension(inp, SNAP_PRETENSION);
     snapExact = d;
     snapD = d === null ? null : Math.round(d);
     snapH = snapD === null ? 0 : solveRest(buildModel({ ...inp, anchor: { ...inp.anchor, distance: snapD } })).rode.h;
@@ -559,7 +561,11 @@ function paintSliders(): void {
       $('#snap-hint').innerHTML = `Snaps to <strong>${snapD} m</strong>: ${(snapH / 1000).toFixed(2)} kN pretension at rest (exactly ${SNAP_PRETENSION / 1000} kN at ${snapExact?.toFixed(1)} m). Max ${hi} m (all pulled straight).`;
     } else {
       anchor.style.removeProperty('--track');
-      $('#snap-hint').textContent = `No balanced point inside the range. Max ${hi} m.`;
+      anchor.style.removeProperty('--thumb');
+      $('#snap-hint').textContent =
+        state.lineCount === 0
+          ? `No stern lines: the boat swings on its anchor, so there is no balanced point. Max ${hi} m.`
+          : `No balanced point inside the range. Max ${hi} m.`;
     }
   }
 }

@@ -1,5 +1,5 @@
 import { brent, norm, solveLinear } from './numeric';
-import { solveRode, type Rode, type RodeState } from './catenary';
+import { slackSpan, solveRode, spanForTension, type Rode, type RodeState } from './catenary';
 import { ropeTension, type RopeType } from './rope';
 import { windDirectionVector, windLoad, type Windage, type WindLoad } from './wind';
 
@@ -172,10 +172,13 @@ export interface SolveOptions {
   maxIter?: number;
 }
 
-/** Guess for the at-rest pose: boat on the x axis, stern lines at their unstretched length. */
+/**
+ * Guess for the at-rest pose: boat on the x axis, stern lines at their unstretched length.
+ * With no stern lines the boat lies bow to the anchor with the chain just taut (no load).
+ */
 export function initialPose(m: MooringModel): Pose {
   const ln = m.lines[0];
-  if (!ln) return { x: m.anchor[0] / 2, y: 0, psi: 0 };
+  if (!ln) return { x: m.anchor[0] - slackSpan(m.rode) - m.bowX, y: m.anchor[1], psi: 0 };
   const dz = ln.attachHeight - ln.shoreHeight;
   const horiz = Math.sqrt(Math.max(0, ln.length ** 2 - dz ** 2));
   const dy = ln.shore[1] - ln.attach[1];
@@ -200,7 +203,8 @@ export function solveEquilibrium(
     const f = evaluate(m, toPose(q), windSpeed, windFromDeg).f;
     return [f[0], f[1], f[2] / L];
   };
-  const p0 = opts.initial ?? initialPose(m);
+  // Swinging at anchor (no stern lines): start head to wind, where the boat must end up.
+  const p0 = m.lines.length === 0 && windSpeed > 0 ? swingingPose(m, windSpeed, windFromDeg) : (opts.initial ?? initialPose(m));
   let q = [p0.x, p0.y, p0.psi * L];
   let r = resid(q);
   let rn = norm(r);
@@ -291,6 +295,22 @@ export function driftStep(f: (s: number) => number, sMax: number): number {
 }
 
 /**
+ * Pose of a boat swinging on its anchor alone: it weathervanes until the wind force, acting at the
+ * centre of effort, passes through the bow roller, i.e. bow pointing into the wind (apparent wind 0°),
+ * and lies downwind of the anchor at the chain span for the head-on wind load.
+ */
+export function swingingPose(m: MooringModel, windSpeed: number, windFromDeg: number): Pose {
+  const deg = ((((-windFromDeg + 180) % 360) + 360) % 360) - 180; // bow turned to face the wind, in [-180, 180)
+  const psi = (deg * Math.PI) / 180;
+  const down = windDirectionVector(windFromDeg);
+  const h = windLoad(m.windage, windSpeed, 0).force;
+  const span = spanForTension(m.rode, h);
+  const bow: Vec2 = [m.anchor[0] + down[0] * span, m.anchor[1] + down[1] * span];
+  const toBow = rot(psi, [m.bowX, 0]);
+  return { x: bow[0] - toBow[0], y: bow[1] - toBow[1], psi };
+}
+
+/**
  * Stiffness of the mooring against a push along the wind direction, N/m, at a given equilibrium.
  * Solves K·δ = f̂ for the 3-DOF restoring stiffness (rotation free) and returns 1 / (f̂·δ).
  */
@@ -311,7 +331,8 @@ export function stiffnessAlong(m: MooringModel, eq: Equilibrium): number {
     for (let i = 0; i < 3; i++) K[i][j] = -(rj[i] - r0[i]) / h;
   }
   const dir = windDirectionVector(eq.windFromDeg);
-  const delta = solveLinear(K, [dir[0], dir[1], 0]);
+  // Swinging on the anchor alone, nothing resists rotation about the bow: use the translational block.
+  const delta = solveLinear(K, [dir[0], dir[1], 0]) ?? solveLinear([K[0].slice(0, 2), K[1].slice(0, 2)], [dir[0], dir[1]]);
   if (!delta) return 0;
   const compliance = dir[0] * delta[0] + dir[1] * delta[1];
   return compliance > 0 ? 1 / compliance : 0;

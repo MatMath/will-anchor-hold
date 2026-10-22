@@ -67,7 +67,7 @@ export interface AppState {
   anchorDistance: number;
   anchorOffset: number;
 
-  lineCount: 1 | 2;
+  lineCount: 0 | 1 | 2;
   lineType: RopeType;
   lineD: number;
   lineMblAuto: boolean;

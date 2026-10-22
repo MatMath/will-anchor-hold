@@ -93,9 +93,10 @@ export function syncControls(root: ParentNode, s: AppState): void {
     b.closest('.field')?.classList.toggle('is-auto', on);
   });
   root.querySelectorAll<HTMLElement>('[data-show-if]').forEach((el) => {
-    const [k, want] = el.dataset.showIf!.split('=');
-    const v = s[k as Key];
-    el.hidden = want === undefined ? !v : String(v) !== want;
+    // "key" (truthy), "key=value" or "key!=value"
+    const m = /^(\w+)(?:(!?=)(.*))?$/.exec(el.dataset.showIf!)!;
+    const v = String(s[m[1] as Key]);
+    el.hidden = m[2] === undefined ? !s[m[1] as Key] : m[2] === '=' ? v !== m[3] : v === m[3];
   });
 }
 

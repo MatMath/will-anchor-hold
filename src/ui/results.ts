@@ -61,6 +61,7 @@ export function resultsTable(s: AppState, r: ScenarioResult): string {
     lineRows.push([`${n} — load / effective MBL`, pct(l.tension / effMbl), ...both((c) => badge(c.lines[i].status, pct(c.lines[i].ratio)))]);
     lineRows.push([`${n} — stretch`, `${(Math.max(0, l.strain) * 100).toFixed(1)}% · ${l.length.toFixed(2)} m`, ...both((c) => `${(Math.max(0, c.eq.lines[i].strain) * 100).toFixed(1)}% · ${c.eq.lines[i].length.toFixed(2)} m`)]);
   });
+  if (!lineRows.length) lineRows.push(['None — swinging at anchor, head to wind', '—', '—', '—']);
   groups.push({ title: 'Stern lines', rows: lineRows });
 
   groups.push({

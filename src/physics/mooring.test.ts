@@ -12,6 +12,7 @@ import {
   solveEquilibrium,
   solveRest,
   sweep,
+  windLoad,
   type Equilibrium,
   type ScenarioInput,
 } from './index';
@@ -213,5 +214,39 @@ describe('slack mooring with long stern lines (regression)', () => {
     const f = (s: number): number => (s < 10 ? 5 : 5 - 1e4 * (s - 10));
     expect(driftStep(f, 1000)).toBeCloseTo(10.0005, 6);
     expect(driftStep(() => 1, 100)).toBe(0);
+  });
+});
+
+describe('no stern lines: swinging at anchor', () => {
+  const swing = (dir: number): ScenarioInput => ({ ...WORKED_EXAMPLE, windFromDeg: dir, lines: { ...WORKED_EXAMPLE.lines, count: 0 } });
+
+  it('the boat turns head to wind (apparent wind 0°) whatever the wind direction', () => {
+    for (const dir of [0, 45, 90, 135, 180, 270, 315]) {
+      const r = runScenario(swing(dir));
+      const e = r.sustained.eq;
+      expect(e.converged).toBe(true);
+      expect(Math.sin((e.wind.angleDeg * Math.PI) / 180)).toBeCloseTo(0, 6);
+      expect(Math.cos((e.wind.angleDeg * Math.PI) / 180)).toBeCloseTo(1, 6);
+      expect(e.lines).toHaveLength(0);
+      const [fx, fy, mz] = balance(e);
+      expect(Math.hypot(fx, fy)).toBeLessThan(1e-3);
+      expect(Math.abs(mz)).toBeLessThan(1e-2);
+    }
+  });
+
+  it('the chain carries the whole head-on wind load', () => {
+    const r = runScenario(swing(90));
+    const e = r.sustained.eq;
+    expect(e.shareChain).toBeCloseTo(1, 6);
+    expect(e.rode.h).toBeCloseTo(windLoad(WORKED_EXAMPLE.windage, 30 * KNOT, 0).force, 3);
+    expect((e.pose.psi * 180) / Math.PI).toBeCloseTo(-90, 6); // starboard-beam wind: bow swings 90° to starboard
+    expect(r.sustained.snatch.k).toBeGreaterThan(0);
+    expect(r.rest.converged).toBe(true);
+  });
+
+  it('beam wind loads the chain far less swinging than Med-moored', () => {
+    const med = runScenario(WORKED_EXAMPLE).sustained.chain.tension;
+    const free = runScenario(swing(90)).sustained.chain.tension;
+    expect(free).toBeLessThan(med / 3);
   });
 });

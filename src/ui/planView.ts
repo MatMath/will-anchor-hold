@@ -112,6 +112,12 @@ export function renderPlan(svg: SVGSVGElement, p: PlanInput): ViewBox {
   else {
     const xs: number[] = [-2, bow[0] + 2, rest.pose.x - L / 2 - 1];
     const ys: number[] = [s.shoreSpread / 2 + 1, -s.shoreSpread / 2 - 1, rest.pose.y + L * 0.35, rest.pose.y - L * 0.35, shown.y + s.beam, shown.y - s.beam];
+    // Both ends of the boat as drawn (it can swing far round when there are no stern lines).
+    for (const u of [-L / 2, L / 2 + 0.5]) {
+      const p = toEarth(shown, [u, 0]);
+      xs.push(p[0]);
+      ys.push(p[1] + s.beam / 2, p[1] - s.beam / 2);
+    }
     const tip = (from: Vec2, f: Vec2): void => {
       xs.push(from[0] + f[0] * scale);
       ys.push(from[1] + f[1] * scale);

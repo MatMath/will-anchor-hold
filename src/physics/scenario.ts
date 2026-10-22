@@ -8,6 +8,7 @@ import type { Windage } from './wind';
 import type { BoatType } from './windage';
 import {
   initialPose,
+  toEarth,
   snatchLoad,
   solveEquilibrium,
   type Equilibrium,
@@ -48,7 +49,8 @@ export interface ScenarioInput {
     offset: number;
   };
   lines: {
-    count: 1 | 2;
+    /** 0 = no stern lines: the boat swings on its anchor. */
+    count: 0 | 1 | 2;
     rope: RopeType;
     /** Catalogue MBL of one line, N. */
     mbl: number;
@@ -106,6 +108,8 @@ export function buildModel(inp: ScenarioInput): MooringModel {
     const portShore: Vec2 = [0, ln.crossed ? -spread : spread];
     const stbdShore: Vec2 = [0, ln.crossed ? spread : -spread];
     lines = [line([sternU, half], portShore), line([sternU, -half], stbdShore)];
+  } else if (ln.count === 0) {
+    lines = [];
   } else {
     const v = ln.single === 'port' ? half : ln.single === 'starboard' ? -half : 0;
     lines = [line([sternU, v], [0, 0])];
@@ -228,7 +232,10 @@ export function runScenario(inp: ScenarioInput): ScenarioResult {
 
   if (!rest.converged || !sustained.eq.converged || !gust.eq.converged)
     warnings.push('The equilibrium solver did not fully converge — check the geometry (lengths, distances).');
-  if (rest.rode.slack && rest.lines.every((l) => l.slack))
+  const swinging = model.lines.length === 0;
+  if (swinging)
+    warnings.push('No stern lines: the boat swings on its anchor and lies head to wind. Allow swinging room — it can sweep a circle of chain span + boat length.');
+  else if (rest.rode.slack && rest.lines.every((l) => l.slack))
     warnings.push('No pretension at rest: chain and stern lines are both slack, so the boat is free to drift until they tighten.');
   else if (rest.lines.every((l) => l.slack))
     warnings.push('Stern lines are slack at rest — the anchor is pulling the boat off the quay. Check line length and anchor distance.');
@@ -238,7 +245,9 @@ export function runScenario(inp: ScenarioInput): ScenarioResult {
     warnings.push('In the gust, all the chain is lifted off the seabed: the anchor is pulled upward and may break out.');
   if (inp.snubber && inp.snubber.length > inp.depth)
     warnings.push('The snubber is longer than the water depth: the hook may touch the seabed when the rode is slack.');
-  const sternX = Math.min(...gust.eq.lines.map((l) => l.cleat[0]));
+  const sternX = swinging
+    ? toEarth(gust.eq.pose, [-model.loa / 2, 0])[0]
+    : Math.min(...gust.eq.lines.map((l) => l.cleat[0]));
   if (sternX < 0.5) warnings.push('In the gust the stern comes within 0.5 m of the quay.');
   return { model, rest, sustained, gust, warnings };
 }
