@@ -36,6 +36,7 @@ See [docs/architecture.md](docs/architecture.md) for the structure, the data flo
 | `src/**/*.test.ts` | Unit, validation and golden-master UI tests (`npm test`) |
 | `docs/worked-example.md` | A complete case to check by hand. Also shown in the app. |
 | `docs/validation.md` | Validation against NREL MoorPy, numerical integration, published data and measurements |
+| `docs/missing-features.md` | What the simulator leaves out today and where each piece would fit |
 
 ## Model and limits
 
