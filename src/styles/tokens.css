@@ -1,0 +1,104 @@
+:root {
+  color-scheme: light;
+  --page: #f4f5f3;
+  --surface: #fcfcfb;
+  --surface-2: #f1f1ee;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6d68;
+  --hairline: #e1e0d9;
+  --border: rgba(11, 11, 11, 0.1);
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+
+  --series-1: #2a78d6; /* chain */
+  --series-2: #eb6834; /* port / single line */
+  --series-3: #1baf7a; /* starboard line */
+  --series-4: #eda100; /* anchor */
+  --series-7: #6250d6; /* snubber */
+  --wind: #3b3a37;
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --good-bg: #e7f6e7;
+  --warning-bg: #fff4d6;
+  --critical-bg: #fbe7e7;
+  --info-bg: #eaf2fc;
+
+  --water: #e6f0fa;
+  --water-deep: #d2e3f5;
+  --sky: #f7f9fb;
+  --bed: #ece3cc;
+  --quay: #d9d6cc;
+  --hull: #ffffff;
+  --hull-stroke: #3b3a37;
+  --deck: #e9e7e0;
+
+  --radius: 12px;
+  --gap: 12px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #9a988f;
+    --hairline: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.1);
+    --accent: #3987e5;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-7: #9085e9;
+    --wind: #e2e0d8;
+    --good-bg: #13280f;
+    --warning-bg: #2e240b;
+    --critical-bg: #351414;
+    --info-bg: #14212f;
+    --water: #11202e;
+    --water-deep: #0d1a26;
+    --sky: #161a1e;
+    --bed: #2b261c;
+    --quay: #34322d;
+    --hull: #2a2a28;
+    --hull-stroke: #d8d6cf;
+    --deck: #3a3936;
+  }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #9a988f;
+  --hairline: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #3987e5;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-7: #9085e9;
+  --wind: #e2e0d8;
+  --good-bg: #13280f;
+  --warning-bg: #2e240b;
+  --critical-bg: #351414;
+  --info-bg: #14212f;
+  --water: #11202e;
+  --water-deep: #0d1a26;
+  --sky: #161a1e;
+  --bed: #2b261c;
+  --quay: #34322d;
+  --hull: #2a2a28;
+  --hull-stroke: #d8d6cf;
+  --deck: #3a3936;
+}

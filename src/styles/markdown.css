@@ -1,0 +1,29 @@
+/* ── Worked example markdown ───────────────────────── */
+.md {
+  font-size: 14px;
+}
+.md h3,
+.md h4,
+.md h5 {
+  margin: 18px 0 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+  font-size: 15px;
+}
+.md blockquote {
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: var(--info-bg);
+  border-radius: 8px;
+}
+.md code {
+  background: var(--surface-2);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}

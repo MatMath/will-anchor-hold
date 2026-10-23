@@ -1,0 +1,49 @@
+.grid2 > .has-slider {
+  grid-column: 1 / -1;
+}
+.lbl-bed {
+  stroke: var(--bed);
+}
+@media (max-width: 600px) {
+  .chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .chip {
+    flex: none;
+  }
+  .status-strip {
+    padding: 6px 12px;
+  }
+  .layout {
+    padding: 12px;
+  }
+  .notes {
+    margin: 0 12px 24px;
+  }
+}
+.results th[scope='row'],
+.results tr.grp th {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+@media (max-width: 600px) {
+  .results {
+    font-size: 12.5px;
+  }
+  .results th[scope='row'] {
+    min-width: 118px;
+    max-width: 130px;
+  }
+  .results th,
+  .results td {
+    padding: 5px 5px;
+  }
+  .results td {
+    white-space: normal;
+    min-width: 64px;
+  }
+}

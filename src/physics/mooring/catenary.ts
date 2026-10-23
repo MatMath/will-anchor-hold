@@ -1,5 +1,5 @@
-import { solveIncreasing } from './numeric';
-import { ropeStrain, type RopeType } from './rope';
+import { solveIncreasing } from '../core/numeric';
+import { ropeStrain, type RopeType } from '../materials/rope';
 
 /**
  * Elastic catenary of an anchor rode lying partly on a flat, frictionless seabed (Irvine, 1981),

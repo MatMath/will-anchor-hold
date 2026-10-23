@@ -4,7 +4,6 @@ import {
   WORKED_EXAMPLE,
   anchorDistanceForPretension,
   buildModel,
-  driftStep,
   liftOffWind,
   maxAnchorDistance,
   lineLengthForPretension,
@@ -16,6 +15,7 @@ import {
   type Equilibrium,
   type ScenarioInput,
 } from './index';
+import { driftStep } from './core/numeric';
 
 const model = buildModel(WORKED_EXAMPLE);
 const rest = solveRest(model);

@@ -1,4 +1,4 @@
-import { DEG, RHO_AIR } from './constants';
+import { DEG, RHO_AIR } from '../core/constants';
 
 export interface Windage {
   /** Side-profile (lateral) area, m². Seen with the wind exactly on the beam. */

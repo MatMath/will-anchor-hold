@@ -1,0 +1,125 @@
+/* ── Chart ───────────────────────── */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-wrap {
+  position: relative;
+}
+svg.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+}
+.c-grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+.c-axis {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+.c-tick,
+.c-axis-title,
+.c-end,
+.c-thr-lbl {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.c-end {
+  fill: var(--ink-2);
+  font-weight: 600;
+}
+.c-axis-title {
+  fill: var(--ink-2);
+}
+.c-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.c-line.s-chain {
+  stroke: var(--series-1);
+}
+.c-line.s-line1 {
+  stroke: var(--series-2);
+}
+.c-line.s-line2 {
+  stroke: var(--series-3);
+}
+.c-line.s-anchor {
+  stroke: var(--series-4);
+}
+.c-thr {
+  stroke-width: 1;
+}
+.c-thr-amber {
+  stroke: var(--warning);
+}
+.c-thr-red {
+  stroke: var(--critical);
+}
+.c-now {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.c-cross {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+.c-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  min-width: 150px;
+}
+.tt-head {
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+.tt-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tt-row strong {
+  font-variant-numeric: tabular-nums;
+}
+.tt-row span {
+  color: var(--muted);
+}
+.tt-muted {
+  color: var(--muted);
+  margin-top: 4px;
+}
+.table-view {
+  margin-top: 8px;
+}
+.table-view summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent);
+}

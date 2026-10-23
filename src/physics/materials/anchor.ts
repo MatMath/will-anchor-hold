@@ -1,4 +1,4 @@
-import { G } from './constants';
+import { G } from '../core/constants';
 
 /**
  * Very rough anchor holding estimate: holding = ratio × anchor weight, reduced when the chain lifts

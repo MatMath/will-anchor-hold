@@ -1,0 +1,73 @@
+/* ── Layout ───────────────────────── */
+.layout {
+  display: grid;
+  gap: var(--gap);
+  padding: var(--gap) 16px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+.col-vis,
+.col-inputs {
+  display: grid;
+  gap: var(--gap);
+  align-content: start;
+  min-width: 0;
+}
+@media (min-width: 1000px) {
+  .layout {
+    grid-template-columns: 370px minmax(0, 1fr);
+  }
+  .col-inputs {
+    grid-column: 1;
+    grid-row: 1;
+    position: sticky;
+    top: 70px;
+    max-height: calc(100vh - 82px);
+    overflow: auto;
+    padding-right: 4px;
+  }
+  .col-vis {
+    grid-column: 2;
+  }
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  min-width: 0;
+}
+.notes {
+  max-width: 1500px;
+  margin: 0 16px 24px;
+}
+@media (min-width: 1532px) {
+  .notes {
+    margin: 0 auto 24px;
+  }
+}
+.notes ul {
+  padding-left: 18px;
+  margin: 8px 0;
+}
+.notes li {
+  margin: 4px 0;
+}
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.caption {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}

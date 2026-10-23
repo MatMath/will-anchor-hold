@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chainEA, slackSpan, solveRode, spanForTension, submergedWeight, type Rode } from './index';
-import { brent } from './numeric';
+import { brent } from './core/numeric';
 
 /**
  * Independent check of the closed-form elastic catenary: integrate the chain's equilibrium equations

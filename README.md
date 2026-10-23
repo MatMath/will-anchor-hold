@@ -25,21 +25,17 @@ For development: `npm run dev` (live reload), `npm test` (unit tests).
 
 ## Layout
 
+See [docs/architecture.md](docs/architecture.md) for the structure, the data flow and how to extend it.
+
 | Path | What |
 |---|---|
-| `src/physics/` | Pure-function physics, no DOM. SI units throughout. |
-| `src/physics/wind.ts` | F = ½·ρ·Cd·A·V², with A and Cd blended by apparent wind angle |
-| `src/physics/windage.ts` | Windage estimator (hull, cabin, rig, bimini, dinghy…) for monohull and catamaran |
-| `src/physics/catenary.ts` | Elastic catenary with seabed contact (Irvine), optional weightless snubber |
-| `src/physics/chain.ts`, `rope.ts`, `anchor.ts` | Chain grades/weights/MBL, rope MBL and load–stretch curves, holding estimates |
-| `src/physics/mooring.ts` | 3-DOF quasi-static equilibrium solver (damped Newton + drift fallback) |
-| `src/physics/waves.ts`, `dynamics.ts` | Wave drift force, rigid-hull wave motion, surge simulation in waves, fishtail extremes |
-| `src/physics/animation.ts` | 10-gust time simulation with waves and fishtailing (drives the animation) |
-| `src/physics/scenario.ts` | Builds the model from inputs; rest / sustained / gust cases, sweep, pretension helper |
-| `src/physics/*.test.ts` | Unit tests (closed-form and ODE catenary checks, force/moment balance, symmetry, worked example) |
+| `src/physics/` | Calculation engine, no DOM, SI units. Layers: `core` → `materials`, `environment` → `mooring` → `dynamics` → `analysis` |
+| `src/app/` | App shell: shared context, store (input rules), scheduler (when to compute), render, interactions, animation, layout |
+| `src/ui/` | View functions: plan and side views, results table, charts, status bar, controls, app state |
+| `src/styles/` | Stylesheets, one per component, in cascade order |
+| `src/**/*.test.ts` | Unit, validation and golden-master UI tests (`npm test`) |
 | `docs/worked-example.md` | A complete case to check by hand. Also shown in the app. |
-| `docs/validation.md` | Catenary checked against NREL MoorPy and numerical integration; chain data and uplift curve sources |
-| `src/ui/` | Plan view, side view, sweep chart, results table, inputs |
+| `docs/validation.md` | Validation against NREL MoorPy, numerical integration, published data and measurements |
 
 ## Model and limits
 

@@ -1,0 +1,56 @@
+/* Range sliders: custom track so it can carry zones / markers via --track and --thumb. */
+input[type='range'] {
+  --track-bg: var(--hairline);
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track, var(--track-bg));
+}
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track, var(--track-bg));
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--thumb, var(--accent));
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border), 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--thumb, var(--accent));
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border), 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.hint-red {
+  color: var(--critical);
+  font-weight: 600;
+}
+.hint-amber {
+  color: #b07800;
+  font-weight: 600;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .hint-amber {
+    color: var(--warning);
+  }
+}
+:root[data-theme='dark'] .hint-amber {
+  color: var(--warning);
+}

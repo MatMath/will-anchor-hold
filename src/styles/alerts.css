@@ -1,0 +1,27 @@
+/* ── Alerts ───────────────────────── */
+#warnings {
+  display: grid;
+  gap: var(--gap);
+}
+#warnings:empty {
+  display: none;
+}
+.alert {
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+}
+.alert ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.alert-info {
+  background: var(--info-bg);
+}
+.alert-amber {
+  background: var(--warning-bg);
+}
+.alert-red {
+  background: var(--critical-bg);
+}

@@ -1,6 +1,6 @@
-import { chainEA, chainMbl } from './chain';
-import { ropeMbl } from './rope';
-import { LINE_EFFICIENCY, sternCleatSpacing, type ScenarioInput } from './scenario';
+import { chainEA, chainMbl } from '../materials/chain';
+import { ropeMbl } from '../materials/rope';
+import { LINE_EFFICIENCY, sternCleatSpacing, type ScenarioInput } from './inputs';
 
 /**
  * The worked example in docs/worked-example.md: a 12.8 m monohull Med-moored with 40 m of 10 mm

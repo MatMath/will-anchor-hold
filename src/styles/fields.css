@@ -1,0 +1,31 @@
+/*
+ * Field alignment: every field in a two-column grid spans three shared rows (label / input / hint)
+ * through subgrid, so inputs side by side line up even when one label wraps or has a hint under it.
+ */
+.grid2 {
+  align-items: start;
+}
+.grid2 > [data-show-if] {
+  display: contents;
+}
+.grid2 > .field,
+.grid2 > [data-show-if] > .field {
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 3px;
+  align-content: start;
+}
+.grid2 .field > label {
+  align-self: end;
+}
+.grid2 .field > .field-row {
+  align-self: start;
+}
+.grid2 .field-check > label {
+  grid-row: 2;
+  align-self: center;
+  min-height: 36px;
+}
+.grid2 .field-check > .hint {
+  grid-row: 3;
+}

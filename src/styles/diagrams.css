@@ -1,0 +1,335 @@
+/* ── Diagrams ───────────────────────── */
+svg.plan,
+svg.side {
+  width: 100%;
+  display: block;
+  border-radius: 8px;
+  touch-action: pan-y;
+  user-select: none;
+}
+svg.plan {
+  aspect-ratio: 16 / 10;
+}
+svg.side {
+  aspect-ratio: 5 / 2;
+}
+@media (max-width: 600px) {
+  svg.plan {
+    aspect-ratio: 4 / 3.4;
+  }
+  svg.side {
+    aspect-ratio: 16 / 9;
+  }
+}
+.lbl {
+  fill: var(--ink-2);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  paint-order: stroke;
+  stroke: var(--water);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.lbl-strong {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.lbl-muted {
+  fill: var(--muted);
+}
+.lbl-force {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.lbl-warn {
+  fill: var(--critical);
+  font-weight: 600;
+}
+.lbl-handle {
+  fill: var(--accent-ink);
+  stroke: none;
+  font-weight: 600;
+}
+.p-water {
+  fill: var(--water);
+}
+.p-quay {
+  fill: var(--quay);
+}
+.p-quay-edge {
+  stroke: var(--hull-stroke);
+  stroke-width: 2;
+}
+.p-streak line {
+  stroke: var(--wind);
+  stroke-opacity: 0.18;
+  stroke-width: 1.5;
+}
+.p-streak .head {
+  fill: var(--wind);
+  fill-opacity: 0.18;
+}
+.p-ghost {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.p-ghost-line {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.p-hull {
+  fill: var(--hull);
+  stroke: var(--hull-stroke);
+  stroke-width: 1.5;
+}
+.p-deck {
+  fill: var(--deck);
+  stroke: var(--hull-stroke);
+  stroke-width: 0.8;
+}
+.p-centre {
+  stroke: var(--muted);
+  stroke-width: 0.8;
+  stroke-dasharray: 6 3 1 3;
+}
+.p-chain {
+  stroke: var(--series-1);
+  stroke-width: 2.5;
+  fill: none;
+}
+.p-chain-ground {
+  stroke: var(--series-1);
+  stroke-width: 5;
+  stroke-opacity: 0.45;
+  fill: none;
+}
+.p-td {
+  fill: var(--surface);
+  stroke: var(--series-1);
+  stroke-width: 2;
+}
+.p-line {
+  stroke-width: 2.5;
+  fill: none;
+}
+.p-line1 {
+  stroke: var(--series-2);
+}
+.p-line2 {
+  stroke: var(--series-3);
+}
+.p-line.is-slack {
+  stroke-dasharray: 2 4;
+}
+.p-ring {
+  fill: var(--surface);
+  stroke: var(--hull-stroke);
+  stroke-width: 1.5;
+}
+.p-roller,
+.p-cleat {
+  fill: var(--hull-stroke);
+}
+.p-ce {
+  fill: var(--surface);
+  stroke: var(--wind);
+  stroke-width: 2;
+}
+.p-drift {
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 2;
+}
+.p-force line {
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.p-force .head {
+  stroke: none;
+}
+.f-wind line {
+  stroke: var(--wind);
+}
+.f-wind .head {
+  fill: var(--wind);
+}
+.f-chain line {
+  stroke: var(--series-1);
+}
+.f-chain .head {
+  fill: var(--series-1);
+}
+.f-line1 line {
+  stroke: var(--series-2);
+}
+.f-line1 .head {
+  fill: var(--series-2);
+}
+.f-line2 line {
+  stroke: var(--series-3);
+}
+.f-line2 .head {
+  fill: var(--series-3);
+}
+.p-offscreen line {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+.p-offscreen .head {
+  fill: var(--muted);
+}
+.p-scale {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.2;
+}
+.drag-anchor {
+  cursor: grab;
+}
+.drag-anchor:focus {
+  outline: none;
+}
+.drag-anchor:focus-visible .ring {
+  stroke: var(--accent);
+}
+.anchor-glyph path,
+.anchor-glyph .ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.anchor-glyph .hit,
+.drag-depth .hit {
+  fill: transparent;
+  stroke: none;
+}
+.anchor-glyph:hover path {
+  stroke: var(--accent);
+}
+
+.s-sky {
+  fill: var(--sky);
+}
+.s-water {
+  fill: var(--water);
+}
+.s-bed {
+  fill: var(--bed);
+}
+.s-surface {
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  stroke-opacity: 0.6;
+}
+.s-bedline {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+.s-dim line {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+.s-dim .head {
+  fill: var(--ink-2);
+}
+.s-hull {
+  fill: var(--hull);
+  stroke: var(--hull-stroke);
+  stroke-width: 1.4;
+}
+.s-cabin {
+  fill: var(--deck);
+  stroke: var(--hull-stroke);
+  stroke-width: 1;
+}
+.s-mast {
+  stroke: var(--hull-stroke);
+  stroke-width: 2;
+}
+.s-chain-ghost {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+.s-chain {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.s-chain-ground {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 5;
+  stroke-opacity: 0.45;
+}
+.s-snubber {
+  fill: none;
+  stroke: var(--series-7);
+  stroke-width: 2.5;
+}
+.s-hook {
+  fill: var(--series-7);
+}
+.s-roller {
+  fill: var(--hull-stroke);
+}
+.s-anchor {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.s-td {
+  stroke: var(--ink-2);
+  stroke-width: 1.2;
+}
+.s-uplift {
+  fill: none;
+  stroke: var(--critical);
+  stroke-width: 1.5;
+}
+.drag-depth {
+  cursor: ns-resize;
+}
+.drag-depth .handle {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+.drag-depth:focus {
+  outline: none;
+}
+.drag-depth:focus-visible .handle {
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.facts div {
+  display: grid;
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.facts span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.facts strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.warn-text {
+  color: var(--critical);
+}

@@ -2,21 +2,65 @@ import { LINE_EFFICIENCY, type CaseResult, type Equilibrium, type ScenarioResult
 import { badge, deg, force, m, pct, type Units } from './format';
 import type { AppState } from './state';
 
-type Cell = string;
-type Row = [label: string, rest: Cell, sustained: Cell, gust: Cell];
+/**
+ * Results table: three columns (at rest, sustained, gust), one group of rows per topic. Each group is built
+ * by its own function; a group returns null when it doesn't apply. Add a group by adding a builder to GROUPS.
+ */
 
-const restCase = (r: ScenarioResult): Equilibrium => r.rest;
+type Row = [label: string, rest: string, sustained: string, gust: string];
+interface Group {
+  title: string;
+  rows: Row[];
+}
+
+/** What every group builder gets. */
+interface TableContext {
+  s: AppState;
+  r: ScenarioResult;
+  A: CaseResult;
+  B: CaseResult;
+  R: Equilibrium;
+  F: (n: number) => string;
+  /** The same cell for the sustained and gust columns. */
+  both: (fn: (c: CaseResult) => string) => [string, string];
+}
+
+const GROUPS: Array<(t: TableContext) => Group | null> = [
+  windGroup,
+  peakGroup,
+  chainGroup,
+  snubberGroup,
+  sternLineGroup,
+  loadSplitGroup,
+  movementGroup,
+  anchorGroup,
+  fishtailGroup,
+  wavesGroup,
+  snatchGroup,
+];
 
 export function resultsTable(s: AppState, r: ScenarioResult): string {
-  const u = s.units as Units;
   const A = r.sustained;
   const B = r.gust;
-  const R = restCase(r);
-  const F = (n: number): string => force(n, u);
-  const both = (fn: (c: CaseResult) => string): [string, string] => [fn(A), fn(B)];
-  const groups: Array<{ title: string; rows: Row[] }> = [];
+  const F = (n: number): string => force(n, s.units as Units);
+  const t: TableContext = { s, r, A, B, R: r.rest, F, both: (fn) => [fn(A), fn(B)] };
+  const body = GROUPS.map((build) => build(t))
+    .filter((g): g is Group => g !== null)
+    .map(groupHtml)
+    .join('');
+  return `<table class="results"><thead><tr><th></th><th scope="col">At rest</th><th scope="col">Sustained</th><th scope="col">Gust</th></tr></thead>${body}</table>`;
+}
 
-  groups.push({
+const groupHtml = (g: Group): string =>
+  `<tbody><tr class="grp"><th colspan="4" scope="colgroup">${g.title}</th></tr>${g.rows
+    .map(([l, a, b, c]) => `<tr><th scope="row">${l}</th><td>${a}</td><td>${b}</td><td>${c}</td></tr>`)
+    .join('')}</tbody>`;
+
+const lineName = (s: AppState, i: number): string => (s.lineCount === 1 ? 'Stern line' : i === 0 ? 'Port line' : 'Starboard line');
+const sideways = (dy: number): string => (Math.abs(dy) < 0.005 ? '0.00 m' : `${Math.abs(dy).toFixed(2)} m ${dy > 0 ? 'to port' : 'to stbd'}`);
+
+function windGroup({ A, B, F, both }: TableContext): Group {
+  return {
     title: 'Wind',
     rows: [
       ['Wind speed', '0 kn', `${A.windKn.toFixed(1)} kn`, `${B.windKn.toFixed(1)} kn`],
@@ -24,73 +68,83 @@ export function resultsTable(s: AppState, r: ScenarioResult): string {
       ['Projected area · effective Cd', '—', ...both((c) => `${c.eq.wind.area.toFixed(1)} m² · ${c.eq.wind.cd.toFixed(2)}`)],
       ['Wind force on the boat', '—', ...both((c) => `<strong>${F(c.eq.wind.force)}</strong>`)],
     ],
-  });
+  };
+}
 
-  // Peaks with waves and/or fishtailing
-  const dyn = A.peak.source !== 'static' || B.peak.source !== 'static';
-  if (dyn) {
-    const peakRows: Row[] = [
-      ['Driven by', '—', ...both((c) => c.peak.source)],
-      ['Chain — peak tension', '—', ...both((c) => `<strong>${F(c.peak.chain.tension)}</strong>`)],
-      ['Chain — peak / MBL', '—', ...both((c) => badge(c.peak.chain.status, pct(c.peak.chain.ratio)))],
-    ];
-    if (A.peak.snubber && B.peak.snubber) peakRows.push(['Snubber — peak / MBL', '—', badge(A.peak.snubber.status, pct(A.peak.snubber.ratio)), badge(B.peak.snubber.status, pct(B.peak.snubber.ratio))]);
-    A.peak.lines.forEach((_, i) =>
-      peakRows.push([`${s.lineCount === 1 ? 'Stern line' : i === 0 ? 'Port line' : 'Starboard line'} — peak / MBL`, '—', ...both((c) => `${F(c.peak.lines[i].tension)} ${badge(c.peak.lines[i].status, pct(c.peak.lines[i].ratio))}`)]),
-    );
-    peakRows.push(['Anchor — peak load / holding', '—', ...both((c) => `${F(c.peak.anchor.load)} ${badge(c.peak.anchor.status, pct(c.peak.anchor.ratio))}`)]);
-    peakRows.push(['Anchor — uplift at peak', '—', ...both((c) => deg(c.peak.anchor.upliftDeg))]);
-    groups.push({ title: 'Peak loads with waves / fishtailing', rows: peakRows });
-  }
-
-  const chainRows: Row[] = [
-    ['Horizontal tension H', F(R.rode.h), ...both((c) => F(c.eq.rode.h))],
-    ['Tension at the bow', F(R.rode.tensionTop), ...both((c) => `<strong>${F(c.chain.tension)}</strong>`)],
-    ['Chain load / MBL', pct(R.rode.tensionTop / (s.chainMbl * 1000)), ...both((c) => badge(c.chain.status, pct(c.chain.ratio)))],
-    ['Tension at the anchor', F(R.rode.tensionAnchor), ...both((c) => F(c.eq.rode.tensionAnchor))],
-    ['Rode angle at the bow (below horizontal)', deg((R.rode.angleTop * 180) / Math.PI), ...both((c) => deg((c.eq.rode.angleTop * 180) / Math.PI))],
-    ['Uplift angle at the anchor', deg((R.rode.angleAnchor * 180) / Math.PI), ...both((c) => deg(c.anchor.upliftDeg))],
-    ['Chain lifted off the seabed', m(R.rode.suspended, 1), ...both((c) => m(c.eq.rode.suspended, 1))],
-    ['Chain still on the seabed', m(R.rode.grounded, 1), ...both((c) => m(c.eq.rode.grounded, 1))],
-    ['Touchdown, from the anchor', R.rode.grounded > 0 ? m(R.rode.touchdownX, 1) : '—', ...both((c) => (c.eq.rode.grounded > 0 ? m(c.eq.rode.touchdownX, 1) : 'none — fully lifted'))],
-    ['Pull on the anchor', R.rode.vAnchor > 0 ? 'upward' : 'horizontal', ...both((c) => (c.anchor.pull === 'upward' ? '<strong>upward ⚠</strong>' : 'horizontal'))],
-    ['Anchor → roller distance', m(R.rode.x, 2), ...both((c) => m(c.eq.rode.x, 2))],
+/** Peaks with waves and/or fishtailing (only when one of them is on). */
+function peakGroup({ s, A, B, F, both }: TableContext): Group | null {
+  if (A.peak.source === 'static' && B.peak.source === 'static') return null;
+  const rows: Row[] = [
+    ['Driven by', '—', ...both((c) => c.peak.source)],
+    ['Chain — peak tension', '—', ...both((c) => `<strong>${F(c.peak.chain.tension)}</strong>`)],
+    ['Chain — peak / MBL', '—', ...both((c) => badge(c.peak.chain.status, pct(c.peak.chain.ratio)))],
   ];
-  groups.push({ title: 'Bow anchor chain', rows: chainRows });
+  if (A.peak.snubber && B.peak.snubber) rows.push(['Snubber — peak / MBL', '—', badge(A.peak.snubber.status, pct(A.peak.snubber.ratio)), badge(B.peak.snubber.status, pct(B.peak.snubber.ratio))]);
+  A.peak.lines.forEach((_, i) =>
+    rows.push([`${lineName(s, i)} — peak / MBL`, '—', ...both((c) => `${F(c.peak.lines[i].tension)} ${badge(c.peak.lines[i].status, pct(c.peak.lines[i].ratio))}`)]),
+  );
+  rows.push(['Anchor — peak load / holding', '—', ...both((c) => `${F(c.peak.anchor.load)} ${badge(c.peak.anchor.status, pct(c.peak.anchor.ratio))}`)]);
+  rows.push(['Anchor — uplift at peak', '—', ...both((c) => deg(c.peak.anchor.upliftDeg))]);
+  return { title: 'Peak loads with waves / fishtailing', rows };
+}
 
-  if (A.snubber && B.snubber) {
-    groups.push({
-      title: 'Snubber',
-      rows: [
-        ['Tension', F(R.rode.tensionTop), F(A.snubber.tension), F(B.snubber.tension)],
-        ['Load / MBL', pct(R.rode.tensionTop / (s.snubberMbl * 1000)), badge(A.snubber.status, pct(A.snubber.ratio)), badge(B.snubber.status, pct(B.snubber.ratio))],
-        ['Stretch', `${(R.rode.snubberStrain * 100).toFixed(1)}%`, ...both((c) => `${(c.eq.rode.snubberStrain * 100).toFixed(1)}%`)],
-      ],
-    });
-  }
+function chainGroup({ s, R, F, both }: TableContext): Group {
+  return {
+    title: 'Bow anchor chain',
+    rows: [
+      ['Horizontal tension H', F(R.rode.h), ...both((c) => F(c.eq.rode.h))],
+      ['Tension at the bow', F(R.rode.tensionTop), ...both((c) => `<strong>${F(c.chain.tension)}</strong>`)],
+      ['Chain load / MBL', pct(R.rode.tensionTop / (s.chainMbl * 1000)), ...both((c) => badge(c.chain.status, pct(c.chain.ratio)))],
+      ['Tension at the anchor', F(R.rode.tensionAnchor), ...both((c) => F(c.eq.rode.tensionAnchor))],
+      ['Rode angle at the bow (below horizontal)', deg((R.rode.angleTop * 180) / Math.PI), ...both((c) => deg((c.eq.rode.angleTop * 180) / Math.PI))],
+      ['Uplift angle at the anchor', deg((R.rode.angleAnchor * 180) / Math.PI), ...both((c) => deg(c.anchor.upliftDeg))],
+      ['Chain lifted off the seabed', m(R.rode.suspended, 1), ...both((c) => m(c.eq.rode.suspended, 1))],
+      ['Chain still on the seabed', m(R.rode.grounded, 1), ...both((c) => m(c.eq.rode.grounded, 1))],
+      ['Touchdown, from the anchor', R.rode.grounded > 0 ? m(R.rode.touchdownX, 1) : '—', ...both((c) => (c.eq.rode.grounded > 0 ? m(c.eq.rode.touchdownX, 1) : 'none — fully lifted'))],
+      ['Pull on the anchor', R.rode.vAnchor > 0 ? 'upward' : 'horizontal', ...both((c) => (c.anchor.pull === 'upward' ? '<strong>upward ⚠</strong>' : 'horizontal'))],
+      ['Anchor → roller distance', m(R.rode.x, 2), ...both((c) => m(c.eq.rode.x, 2))],
+    ],
+  };
+}
 
+function snubberGroup({ s, A, B, R, F, both }: TableContext): Group | null {
+  if (!A.snubber || !B.snubber) return null;
+  return {
+    title: 'Snubber',
+    rows: [
+      ['Tension', F(R.rode.tensionTop), F(A.snubber.tension), F(B.snubber.tension)],
+      ['Load / MBL', pct(R.rode.tensionTop / (s.snubberMbl * 1000)), badge(A.snubber.status, pct(A.snubber.ratio)), badge(B.snubber.status, pct(B.snubber.ratio))],
+      ['Stretch', `${(R.rode.snubberStrain * 100).toFixed(1)}%`, ...both((c) => `${(c.eq.rode.snubberStrain * 100).toFixed(1)}%`)],
+    ],
+  };
+}
+
+function sternLineGroup({ s, R, F, both }: TableContext): Group {
   const effMbl = s.lineMbl * 1000 * LINE_EFFICIENCY;
-  const lineName = (i: number): string => (s.lineCount === 1 ? 'Stern line' : i === 0 ? 'Port line' : 'Starboard line');
-  const lineRows: Row[] = [];
+  const rows: Row[] = [];
   R.lines.forEach((l, i) => {
-    const n = lineName(i);
-    lineRows.push([`${n} — tension`, F(l.tension), ...both((c) => `<strong>${F(c.lines[i].tension)}</strong>`)]);
-    lineRows.push([`${n} — load / effective MBL`, pct(l.tension / effMbl), ...both((c) => badge(c.lines[i].status, pct(c.lines[i].ratio)))]);
-    lineRows.push([`${n} — stretch`, `${(Math.max(0, l.strain) * 100).toFixed(1)}% · ${l.length.toFixed(2)} m`, ...both((c) => `${(Math.max(0, c.eq.lines[i].strain) * 100).toFixed(1)}% · ${c.eq.lines[i].length.toFixed(2)} m`)]);
+    const n = lineName(s, i);
+    rows.push([`${n} — tension`, F(l.tension), ...both((c) => `<strong>${F(c.lines[i].tension)}</strong>`)]);
+    rows.push([`${n} — load / effective MBL`, pct(l.tension / effMbl), ...both((c) => badge(c.lines[i].status, pct(c.lines[i].ratio)))]);
+    rows.push([`${n} — stretch`, `${(Math.max(0, l.strain) * 100).toFixed(1)}% · ${l.length.toFixed(2)} m`, ...both((c) => `${(Math.max(0, c.eq.lines[i].strain) * 100).toFixed(1)}% · ${c.eq.lines[i].length.toFixed(2)} m`)]);
   });
-  if (!lineRows.length) lineRows.push(['None — swinging at anchor, head to wind', '—', '—', '—']);
-  groups.push({ title: 'Stern lines', rows: lineRows });
+  if (!rows.length) rows.push(['None — swinging at anchor, head to wind', '—', '—', '—']);
+  return { title: 'Stern lines', rows };
+}
 
-  groups.push({
+function loadSplitGroup({ both }: TableContext): Group {
+  return {
     title: 'Load split (share of the wind force resisted)',
     rows: [
       ['Chain', '—', ...both((c) => pct(c.eq.shareChain))],
       ['Stern lines', '—', ...both((c) => pct(c.eq.shareLines))],
       ['Chain tension ÷ wind force', '—', ...both((c) => `${(c.chain.tension / Math.max(1, c.eq.wind.force)).toFixed(2)} ×`)],
     ],
-  });
+  };
+}
 
-  groups.push({
+function movementGroup({ both }: TableContext): Group {
+  return {
     title: 'Boat movement (from the at-rest position)',
     rows: [
       ['Sideways shift (midships)', '0', ...both((c) => `<strong>${sideways(c.drift.dy)}</strong>`)],
@@ -98,9 +152,11 @@ export function resultsTable(s: AppState, r: ScenarioResult): string {
       ['Fore-aft shift (+ = seaward)', '0', ...both((c) => m(c.drift.dx))],
       ['Heading change (+ = bow to port)', '0°', ...both((c) => deg(c.drift.dPsiDeg))],
     ],
-  });
+  };
+}
 
-  groups.push({
+function anchorGroup({ A, B, R, F, both }: TableContext): Group {
+  return {
     title: 'Anchor holding (rough estimate)',
     rows: [
       ['Holding when pulled flat', F(A.anchor.holdingFlat), F(A.anchor.holdingFlat), F(B.anchor.holdingFlat)],
@@ -108,55 +164,46 @@ export function resultsTable(s: AppState, r: ScenarioResult): string {
       ['Estimated holding', '—', ...both((c) => F(c.anchor.holding))],
       ['Anchor load / holding', pct(R.rode.tensionAnchor / A.anchor.holdingFlat), ...both((c) => badge(c.anchor.status, pct(c.anchor.ratio)))],
     ],
-  });
+  };
+}
 
-  if (A.fishtail && B.fishtail) {
-    groups.push({
-      title: `Fishtailing — held at ±${A.fishtail.amplitudeDeg}° off the wind`,
-      rows: [
-        ['Wind angle on the boat at the end of the swing', '—', ...both((c) => deg(c.fishtail!.eq.wind.angleDeg))],
-        ['Wind force at the end of the swing', '—', ...both((c) => F(c.fishtail!.eq.wind.force))],
-        ['Chain tension at the end of the swing', '—', ...both((c) => `<strong>${F(c.fishtail!.chain.tension)}</strong>`)],
-        ['× the head-to-wind load', '—', ...both((c) => `${(c.fishtail!.chain.tension / Math.max(1, c.chain.tension)).toFixed(2)} ×`)],
-        ['Bow moves (from head to wind)', '—', ...both((c) => m(Math.hypot(c.fishtail!.eq.bow[0] - c.eq.bow[0], c.fishtail!.eq.bow[1] - c.eq.bow[1]), 2))],
-      ],
-    });
-  }
+function fishtailGroup({ A, B, F, both }: TableContext): Group | null {
+  if (!A.fishtail || !B.fishtail) return null;
+  return {
+    title: `Fishtailing — held at ±${A.fishtail.amplitudeDeg}° off the wind`,
+    rows: [
+      ['Wind angle on the boat at the end of the swing', '—', ...both((c) => deg(c.fishtail!.eq.wind.angleDeg))],
+      ['Wind force at the end of the swing', '—', ...both((c) => F(c.fishtail!.eq.wind.force))],
+      ['Chain tension at the end of the swing', '—', ...both((c) => `<strong>${F(c.fishtail!.chain.tension)}</strong>`)],
+      ['× the head-to-wind load', '—', ...both((c) => `${(c.fishtail!.chain.tension / Math.max(1, c.chain.tension)).toFixed(2)} ×`)],
+      ['Bow moves (from head to wind)', '—', ...both((c) => m(Math.hypot(c.fishtail!.eq.bow[0] - c.eq.bow[0], c.fishtail!.eq.bow[1] - c.eq.bow[1]), 2))],
+    ],
+  };
+}
 
-  if (A.waves && B.waves) {
-    const w = A.waves;
-    groups.push({
-      title: `Waves — Hs ${s.waveHs} m, period ${w.period.toFixed(1)} s, from the wind`,
-      rows: [
-        ['Largest wave (1.86 × Hs) · wavelength', '—', ...both((c) => `${c.waves!.height.toFixed(2)} m · ${c.waves!.length.toFixed(1)} m`)],
-        ['Wave angle on the hull', '—', ...both((c) => deg(c.waves!.betaDeg))],
-        ['Mean wave drift force (in the equilibrium)', '—', ...both((c) => F(c.waves!.drift))],
-        ['Water surge ± · boat surge (largest)', '—', ...both((c) => `±${c.waves!.waterSurge.toFixed(2)} m · ${c.waves!.boatSurge.toFixed(2)} m`)],
-        ['Boat natural surge period on the mooring', '—', ...both((c) => `${c.waves!.naturalPeriod.toFixed(1)} s`)],
-        ['Bow lift the wave imposes · actual', '—', ...both((c) => `${c.waves!.bowLift.toFixed(2)} m · ${c.waves!.bowMotion.toFixed(2)} m`)],
-        ['Chain tension over the waves (min – max)', '—', ...both((c) => `${F(c.waves!.chainMin)} – <strong>${F(c.waves!.chainMax)}</strong>`)],
-      ],
-    });
-  }
+function wavesGroup({ s, A, B, F, both }: TableContext): Group | null {
+  if (!A.waves || !B.waves) return null;
+  return {
+    title: `Waves — Hs ${s.waveHs} m, period ${A.waves.period.toFixed(1)} s, from the wind`,
+    rows: [
+      ['Largest wave (1.86 × Hs) · wavelength', '—', ...both((c) => `${c.waves!.height.toFixed(2)} m · ${c.waves!.length.toFixed(1)} m`)],
+      ['Wave angle on the hull', '—', ...both((c) => deg(c.waves!.betaDeg))],
+      ['Mean wave drift force (in the equilibrium)', '—', ...both((c) => F(c.waves!.drift))],
+      ['Water surge ± · boat surge (largest)', '—', ...both((c) => `±${c.waves!.waterSurge.toFixed(2)} m · ${c.waves!.boatSurge.toFixed(2)} m`)],
+      ['Boat natural surge period on the mooring', '—', ...both((c) => `${c.waves!.naturalPeriod.toFixed(1)} s`)],
+      ['Bow lift the wave imposes · actual', '—', ...both((c) => `${c.waves!.bowLift.toFixed(2)} m · ${c.waves!.bowMotion.toFixed(2)} m`)],
+      ['Chain tension over the waves (min – max)', '—', ...both((c) => `${F(c.waves!.chainMin)} – <strong>${F(c.waves!.chainMax)}</strong>`)],
+    ],
+  };
+}
 
-  groups.push({
+function snatchGroup({ s, F, both }: TableContext): Group {
+  return {
     title: `Dynamic — indicative only (surge ${s.snatchSpeed} m/s)`,
     rows: [
       ['Mooring stiffness along the wind', '—', ...both((c) => `${(c.snatch.k / 1000).toFixed(1)} kN/m`)],
       ['Effective mass (incl. added mass)', '—', ...both((c) => `${Math.round(c.snatch.mEff).toLocaleString('en')} kg`)],
       ['Extra load if a surge is stopped', '—', ...both((c) => F(c.snatch.force))],
     ],
-  });
-
-  const body = groups
-    .map(
-      (g) =>
-        `<tbody><tr class="grp"><th colspan="4" scope="colgroup">${g.title}</th></tr>${g.rows
-          .map(([l, a, b, c]) => `<tr><th scope="row">${l}</th><td>${a}</td><td>${b}</td><td>${c}</td></tr>`)
-          .join('')}</tbody>`,
-    )
-    .join('');
-  return `<table class="results"><thead><tr><th></th><th scope="col">At rest</th><th scope="col">Sustained</th><th scope="col">Gust</th></tr></thead>${body}</table>`;
+  };
 }
-
-const sideways = (dy: number): string => (Math.abs(dy) < 0.005 ? '0.00 m' : `${Math.abs(dy).toFixed(2)} m ${dy > 0 ? 'to port' : 'to stbd'}`);

@@ -1,4 +1,4 @@
-import { G, RHO_SEAWATER, RHO_STEEL } from './constants';
+import { G, RHO_SEAWATER, RHO_STEEL } from '../core/constants';
 
 /**
  * Galvanised short-link anchor chain.

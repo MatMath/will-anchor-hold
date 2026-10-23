@@ -1,4 +1,4 @@
-import { interp } from './numeric';
+import { interp } from '../core/numeric';
 
 /**
  * Typical fibre-rope data. MBL ≈ k·d² (d in mm, result in kN) and a load–strain curve given as
