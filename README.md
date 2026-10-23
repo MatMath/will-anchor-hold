@@ -1,4 +1,4 @@
-# Med-mooring loads
+# Will Anchor Hold
 
 A single-page, offline web app that calculates the loads on a boat Med-moored with a bow anchor and one or
 two stern lines to a quay or rock, when the wind blows from the side.
