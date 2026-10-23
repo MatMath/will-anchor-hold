@@ -107,7 +107,8 @@ function thresholds({ pctMode, yMax, Y }: Chart): string[] {
   ] as const) {
     if (v > yMax) continue;
     g.push(`<line class="c-thr ${cls}" x1="${M.l}" x2="${W - M.r}" y1="${Y(v)}" y2="${Y(v)}"/>`);
-    g.push(`<text class="c-thr-lbl" x="${M.l + 4}" y="${Y(v) - 4}">${lab}</text>`);
+    // Amber sits under its line and red above, so the two labels never overlap.
+    g.push(`<text class="c-thr-lbl" x="${M.l + 4}" y="${v === 30 ? Y(v) + 12 : Y(v) - 4}">${lab}</text>`);
   }
   return g;
 }

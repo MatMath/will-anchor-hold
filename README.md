@@ -8,6 +8,28 @@ off the seabed), the stern-line tensions, the boat's equilibrium position (sidew
 heading change), how the load splits between chain and lines, and safety margins against MBL and
 estimated anchor holding.
 
+## Screenshots
+
+The worked example (12.8 m monohull, 40 m of 10 mm chain, two 6.5 m stern lines, 30 kn beam-on, gusts 42 kn):
+
+![Overview: inputs, wind dial and status chips for the worked example](docs/images/overview.png)
+
+| Plan and chain side view | Swinging at anchor, with waves and fishtailing |
+|---|---|
+| ![Plan view of the boat pushed sideways between chain and stern lines, and the chain catenary in side view](docs/images/plan-side.png) | ![No stern lines: boat head to wind on its anchor, gust case](docs/images/swing-waves.png) |
+
+The 10-gust animation, with the waves, fishtailing and live load traces:
+
+![Gust animation with wave crests in the plan view and the live loads chart](docs/images/animation.png)
+
+| Loads from 10 to 60 kn | Results table |
+|---|---|
+| ![Sweep chart of chain, line and anchor loads against wind speed](docs/images/results-chart.png) | ![Results table: wind, chain, stern lines, load split, movement, anchor holding](docs/images/results-table.png) |
+
+| Phone | Dark mode |
+|---|---|
+| <img src="docs/images/mobile.png" width="300" alt="The app on a phone-width screen"> | ![The plan view in dark mode](docs/images/dark.png) |
+
 ## Use it
 
 ```bash
